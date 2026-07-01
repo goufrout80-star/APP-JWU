@@ -1,0 +1,45 @@
+# ==============================================
+# JWU Admin (app-site) — .gitignore
+# Separate repo (APP-JWU) from the marketing site.
+# ==============================================
+
+# ─── Dependencies ─────────────────────────────
+node_modules/
+
+# ─── Build output ─────────────────────────────
+dist/
+dist-ssr/
+build/
+.cache/
+.vite/
+*.tsbuildinfo
+
+# ─── Secrets & env ────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ─── Logs ─────────────────────────────────────
+logs
+*.log
+npm-debug.log*
+
+# ─── Editor / IDE ─────────────────────────────
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+*.suo
+*.sw?
+
+# ─── Editor / AI assistant artifacts ──────────
+.windsurf/
+.cursor/
+.claude/
+.codeium/
+.trae/
+
+# ─── Hosting provider local metadata ──────────
+.vercel/
+.netlify/
