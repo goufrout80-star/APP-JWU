@@ -63,7 +63,7 @@ export default function Login() {
         <div aria-hidden style={{ position: 'absolute', inset: 0, backgroundImage: 'linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px)', backgroundSize: '32px 32px', maskImage: 'radial-gradient(120% 100% at 30% 20%, #000, transparent 75%)', WebkitMaskImage: 'radial-gradient(120% 100% at 30% 20%, #000, transparent 75%)' }} />
 
         <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease: EASE }} style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 11 }}>
-          <span style={{ width: 34, height: 34, borderRadius: 9, background: T.teal, color: '#08120E', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: 16 }}>J</span>
+          <img src="/favicon.svg" alt="JUST WHY US" width={34} height={34} style={{ borderRadius: 9, display: 'block' }} />
           <span style={{ fontWeight: 800, fontSize: 16, letterSpacing: '0.02em', color: '#fff' }}>JUST WHY US <span style={{ color: T.teal }}>· Admin</span></span>
         </motion.div>
 

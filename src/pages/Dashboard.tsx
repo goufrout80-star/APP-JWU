@@ -405,7 +405,7 @@ export default function Dashboard() {
       {/* sidebar */}
       <aside style={{ borderRight: `1px solid ${T.hairline}`, background: T.surface, padding: '22px 16px', display: 'flex', flexDirection: 'column', gap: 4, position: 'sticky', top: 0, height: '100dvh' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 8px 20px' }}>
-          <span style={{ width: 32, height: 32, borderRadius: 9, background: T.ink, color: T.teal, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: 15 }}>J</span>
+          <img src="/favicon.svg" alt="JWU" width={32} height={32} style={{ borderRadius: 9, display: 'block' }} />
           <div style={{ lineHeight: 1.1 }}>
             <div style={{ fontWeight: 900, fontSize: 14.5, letterSpacing: '-0.02em', color: T.ink }}>JWU Admin</div>
             <div style={{ fontSize: 11, color: T.muted }}>Submissions</div>

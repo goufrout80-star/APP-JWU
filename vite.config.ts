@@ -6,4 +6,9 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   server: { port: 5181 },
+  build: {
+    // No inline modulepreload polyfill → keeps a strict CSP `script-src 'self'`
+    // (no 'unsafe-inline') working. Admin users are all modern browsers.
+    modulePreload: { polyfill: false },
+  },
 })
