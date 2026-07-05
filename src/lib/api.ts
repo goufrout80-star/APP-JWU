@@ -7,6 +7,7 @@
 import type {
   Application, ContactSubmission, VisitorMeta,
   ContactStatus, ApplicationStatus,
+  AdminRecord, AdminRole, ActivityLogEntry, SubmissionNote, AppSettings,
 } from './types'
 import { supabase, IS_SUPABASE_CONFIGURED } from './supabase'
 
@@ -15,6 +16,21 @@ export interface DataApi {
   listApplications(): Promise<Application[]>
   setContactStatus(id: string, status: ContactStatus): Promise<void>
   setApplicationStatus(id: string, status: ApplicationStatus): Promise<void>
+
+  listAdmins(): Promise<AdminRecord[]>
+  addAdmin(email: string, role: AdminRole): Promise<void>
+  setAdminActive(email: string, active: boolean): Promise<void>
+  setAdminRole(email: string, role: AdminRole): Promise<void>
+  removeAdmin(email: string): Promise<void>
+
+  listActivityLog(limit?: number): Promise<ActivityLogEntry[]>
+
+  listNotes(submissionType: 'contact' | 'application', submissionId: string): Promise<SubmissionNote[]>
+  addNote(submissionType: 'contact' | 'application', submissionId: string, body: string): Promise<void>
+  deleteNote(id: string): Promise<void>
+
+  getSettings(): Promise<AppSettings>
+  setSetting(key: keyof AppSettings, value: string | number): Promise<void>
 }
 
 function metaFromRow(m: unknown): VisitorMeta {
@@ -73,6 +89,90 @@ class SupabaseApi implements DataApi {
 
   async setApplicationStatus(id: string, status: ApplicationStatus) {
     const { error } = await this.client().from('applications').update({ status }).eq('id', id)
+    if (error) throw new Error(error.message)
+  }
+
+  async listAdmins(): Promise<AdminRecord[]> {
+    const { data, error } = await this.client().from('admins').select('*').order('created_at', { ascending: true })
+    if (error) throw new Error(error.message)
+    return (data as Row[]).map((r) => ({
+      email: r.email, role: r.role, active: r.active,
+      displayName: r.display_name, createdAt: r.created_at, updatedAt: r.updated_at,
+    }))
+  }
+
+  async addAdmin(email: string, role: AdminRole) {
+    const { error } = await this.client().from('admins').insert({ email: email.trim().toLowerCase(), role })
+    if (error) throw new Error(error.message)
+  }
+
+  async setAdminActive(email: string, active: boolean) {
+    const { error } = await this.client().from('admins').update({ active, updated_at: new Date().toISOString() }).eq('email', email)
+    if (error) throw new Error(error.message)
+  }
+
+  async setAdminRole(email: string, role: AdminRole) {
+    const { error } = await this.client().from('admins').update({ role, updated_at: new Date().toISOString() }).eq('email', email)
+    if (error) throw new Error(error.message)
+  }
+
+  async removeAdmin(email: string) {
+    const { error } = await this.client().from('admins').delete().eq('email', email)
+    if (error) throw new Error(error.message)
+  }
+
+  async listActivityLog(limit = 100): Promise<ActivityLogEntry[]> {
+    const { data, error } = await this.client().from('activity_log').select('*').order('created_at', { ascending: false }).limit(limit)
+    if (error) throw new Error(error.message)
+    return (data as Row[]).map((r) => ({
+      id: r.id, actorEmail: r.actor_email, action: r.action,
+      targetType: r.target_type, targetId: r.target_id, detail: r.detail ?? {}, createdAt: r.created_at,
+    }))
+  }
+
+  async listNotes(submissionType: 'contact' | 'application', submissionId: string): Promise<SubmissionNote[]> {
+    const { data, error } = await this.client().from('submission_notes').select('*')
+      .eq('submission_type', submissionType).eq('submission_id', submissionId).order('created_at', { ascending: true })
+    if (error) throw new Error(error.message)
+    return (data as Row[]).map((r) => ({
+      id: r.id, submissionType: r.submission_type, submissionId: r.submission_id,
+      authorEmail: r.author_email, body: r.body, createdAt: r.created_at,
+    }))
+  }
+
+  async addNote(submissionType: 'contact' | 'application', submissionId: string, body: string) {
+    const { data: userData } = await this.client().auth.getUser()
+    const authorEmail = userData.user?.email
+    if (!authorEmail) throw new Error('Not signed in.')
+    const { error } = await this.client().from('submission_notes').insert({
+      submission_type: submissionType, submission_id: submissionId, author_email: authorEmail, body: body.trim(),
+    })
+    if (error) throw new Error(error.message)
+  }
+
+  async deleteNote(id: string) {
+    const { error } = await this.client().from('submission_notes').delete().eq('id', id)
+    if (error) throw new Error(error.message)
+  }
+
+  async getSettings(): Promise<AppSettings> {
+    const { data, error } = await this.client().from('app_settings').select('*')
+    if (error) throw new Error(error.message)
+    const rows = data as Row[]
+    const get = (key: string, fallback: unknown) => rows.find((r) => r.key === key)?.value ?? fallback
+    return {
+      orgName: get('org_name', 'JUST WHY US') as string,
+      notifyEmail: get('notify_email', '') as string,
+      defaultPageSize: get('default_page_size', 25) as number,
+    }
+  }
+
+  async setSetting(key: keyof AppSettings, value: string | number) {
+    const dbKey = { orgName: 'org_name', notifyEmail: 'notify_email', defaultPageSize: 'default_page_size' }[key]
+    const { data: userData } = await this.client().auth.getUser()
+    const { error } = await this.client().from('app_settings').upsert({
+      key: dbKey, value, updated_at: new Date().toISOString(), updated_by: userData.user?.email ?? null,
+    })
     if (error) throw new Error(error.message)
   }
 }

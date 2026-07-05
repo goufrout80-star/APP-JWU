@@ -73,3 +73,40 @@ export interface BrandApplication {
 
 export type Application = CreatorApplication | BrandApplication
 export type Submission = ContactSubmission | Application
+
+/* ── admin/RBAC ──────────────────────────────────────────────── */
+export type AdminRole = 'admin' | 'super_admin'
+
+export interface AdminRecord {
+  email: string
+  role: AdminRole
+  active: boolean
+  displayName: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ActivityLogEntry {
+  id: string
+  actorEmail: string
+  action: string
+  targetType: string
+  targetId: string | null
+  detail: Record<string, unknown>
+  createdAt: string
+}
+
+export interface SubmissionNote {
+  id: string
+  submissionType: 'contact' | 'application'
+  submissionId: string
+  authorEmail: string
+  body: string
+  createdAt: string
+}
+
+export interface AppSettings {
+  orgName: string
+  notifyEmail: string
+  defaultPageSize: number
+}

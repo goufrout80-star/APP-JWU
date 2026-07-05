@@ -2,7 +2,14 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from './lib/auth'
 import { T } from './lib/theme'
 import Login from './pages/Login'
-import Dashboard from './pages/Dashboard'
+import Layout, { RequireSuperAdmin } from './components/Layout'
+import Overview from './pages/Overview'
+import Contacts from './pages/Contacts'
+import Applications from './pages/Applications'
+import Admins from './pages/Admins'
+import Analytics from './pages/Analytics'
+import ActivityLog from './pages/ActivityLog'
+import Settings from './pages/Settings'
 
 function FullscreenSpinner() {
   return (
@@ -25,7 +32,19 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
-      <Route path="/*" element={<RequireAuth><Dashboard /></RequireAuth>} />
+      <Route element={<RequireAuth><Layout /></RequireAuth>}>
+        <Route path="/overview" element={<Overview />} />
+        <Route path="/contacts" element={<Contacts />} />
+        <Route path="/applications" element={<Applications />} />
+        <Route path="/analytics" element={<Analytics />} />
+        <Route path="/activity" element={<ActivityLog />} />
+        <Route path="/settings" element={<Settings />} />
+        <Route element={<RequireSuperAdmin />}>
+          <Route path="/admins" element={<Admins />} />
+        </Route>
+        <Route path="/" element={<Navigate to="/overview" replace />} />
+        <Route path="*" element={<Navigate to="/overview" replace />} />
+      </Route>
     </Routes>
   )
 }

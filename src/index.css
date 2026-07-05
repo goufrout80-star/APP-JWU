@@ -31,5 +31,19 @@ table { border-collapse: collapse; width: 100%; }
   .ov-grid { grid-template-columns: 1fr !important; }
 }
 
+/* sidebar collapses to a top bar + slide-out sheet on narrow screens */
+@media (max-width: 900px) {
+  .app-shell { grid-template-columns: 1fr !important; }
+  .app-sidebar { display: none !important; }
+  .app-topbar { display: flex !important; }
+}
+
+@keyframes skelPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+.skel-block { animation: skelPulse 1.3s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .skel-block { animation: none; opacity: 0.75; } }
+
 /* no blanket reduced-motion kill-switch here — see main site's index.css
    for why (some browsers/privacy modes misreport this media query). */
