@@ -3,6 +3,8 @@ import { useAuth } from './lib/auth'
 import { T } from './lib/theme'
 import Login from './pages/Login'
 import ResetPassword from './pages/ResetPassword'
+import MfaSetup from './pages/MfaSetup'
+import MfaChallenge from './pages/MfaChallenge'
 import Layout, { RequireSuperAdmin } from './components/Layout'
 import Overview from './pages/Overview'
 import Contacts from './pages/Contacts'
@@ -29,6 +31,16 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+function RequireSecureAuth({ children }: { children: React.ReactNode }) {
+  const { user, loading, securityLoading, mfaEnrolled, aal } = useAuth()
+  const location = useLocation()
+  if (loading || securityLoading) return <FullscreenSpinner />
+  if (!user) return <Navigate to="/login" replace state={{ from: location }} />
+  if (!mfaEnrolled) return <Navigate to="/mfa/setup" replace state={{ from: location }} />
+  if (aal !== 'aal2') return <Navigate to="/mfa/challenge" replace state={{ from: location }} />
+  return <>{children}</>
+}
+
 function RecoveryAwareRoot() {
   const location = useLocation()
   const hasRecoveryCode = new URLSearchParams(location.search).has('code')
@@ -47,7 +59,9 @@ export default function App() {
       <Route path="/" element={<RecoveryAwareRoot />} />
       <Route path="/login" element={<Login />} />
       <Route path="/reset-password" element={<ResetPassword />} />
-      <Route element={<RequireAuth><Layout /></RequireAuth>}>
+      <Route path="/mfa/setup" element={<RequireAuth><MfaSetup /></RequireAuth>} />
+      <Route path="/mfa/challenge" element={<RequireAuth><MfaChallenge /></RequireAuth>} />
+      <Route element={<RequireSecureAuth><Layout /></RequireSecureAuth>}>
         <Route path="/overview" element={<Overview />} />
         <Route path="/contacts" element={<Contacts />} />
         <Route path="/applications" element={<Applications />} />
