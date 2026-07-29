@@ -1,10 +1,6 @@
-/* ════════════════════════════════════════════════════════════════
-   Central data store — contacts + applications are fetched once here
-   and shared across Overview/Contacts/Applications/Analytics, instead
-   of each page re-fetching independently.
-   ════════════════════════════════════════════════════════════════ */
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { api } from './api'
+import { supabase } from './supabase'
 import type { Application, ContactSubmission, ContactStatus, ApplicationStatus, Submission } from './types'
 
 interface DataState {
@@ -23,15 +19,37 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [apps, setApps] = useState<Application[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const reload = useCallback(() => {
-    setLoading(true); setError(null)
+    setLoading(true)
+    setError(null)
     Promise.all([api.listContacts(), api.listApplications()])
       .then(([c, a]) => { setContacts(c); setApps(a) })
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load data.'))
       .finally(() => setLoading(false))
   }, [])
+
+  const scheduleReload = useCallback(() => {
+    if (reloadTimer.current) clearTimeout(reloadTimer.current)
+    reloadTimer.current = setTimeout(reload, 180)
+  }, [reload])
+
   useEffect(reload, [reload])
+
+  useEffect(() => {
+    if (!supabase) return
+    const channel = supabase
+      .channel('jwu-admin-submissions')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'contacts' }, scheduleReload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'applications' }, scheduleReload)
+      .subscribe()
+
+    return () => {
+      if (reloadTimer.current) clearTimeout(reloadTimer.current)
+      void supabase.removeChannel(channel)
+    }
+  }, [scheduleReload])
 
   const changeStatus = useCallback(async (item: Submission, status: string) => {
     if (item.kind === 'contact') {
@@ -43,11 +61,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  return (
-    <DataCtx.Provider value={{ contacts, apps, loading, error, reload, changeStatus }}>
-      {children}
-    </DataCtx.Provider>
-  )
+  return <DataCtx.Provider value={{ contacts, apps, loading, error, reload, changeStatus }}>{children}</DataCtx.Provider>
 }
 
 export function useData() {
