@@ -2,6 +2,7 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from './lib/auth'
 import { T } from './lib/theme'
 import Login from './pages/Login'
+import ResetPassword from './pages/ResetPassword'
 import Layout, { RequireSuperAdmin } from './components/Layout'
 import Overview from './pages/Overview'
 import Contacts from './pages/Contacts'
@@ -32,6 +33,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
       <Route element={<RequireAuth><Layout /></RequireAuth>}>
         <Route path="/overview" element={<Overview />} />
         <Route path="/contacts" element={<Contacts />} />
