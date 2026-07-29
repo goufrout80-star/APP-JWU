@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { T, SHADOW } from '../lib/theme'
 import { flag, dateTime, duration, relative } from '../lib/format'
 import { api } from '../lib/api'
+import { useAuth } from '../lib/auth'
 import type { Submission, SubmissionNote } from '../lib/types'
-import { Icon, IC, Avatar, StatusSelect, Button } from './ui'
+import { Icon, IC, Avatar, StatusSelect, Button, ConfirmDialog, useToast } from './ui'
 
 const CONTACT_STATUSES = ['new', 'read', 'replied', 'archived']
 const APP_STATUSES = ['new', 'reviewing', 'accepted', 'rejected']
@@ -65,7 +66,7 @@ function NotesSection({ submissionType, submissionId }: { submissionType: 'conta
       {loading ? (
         <div style={{ fontSize: 12.5, color: T.muted, padding: '10px 0' }}>Loading notes…</div>
       ) : notes.length === 0 ? (
-        <div style={{ fontSize: 12.5, color: T.muted, padding: '10px 0' }}>No notes yet — leave one for the team below.</div>
+        <div style={{ fontSize: 12.5, color: T.muted, padding: '10px 0' }}>No notes yet. Leave one for the team below.</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
           {notes.map((n) => (
@@ -95,11 +96,42 @@ function NotesSection({ submissionType, submissionId }: { submissionType: 'conta
   )
 }
 
-export function SubmissionDrawer({ item, onClose, onStatus }: { item: Submission; onClose: () => void; onStatus: (s: string) => void }) {
+interface SubmissionDrawerProps {
+  item: Submission
+  onClose: () => void
+  onStatus: (s: string) => void
+  onDelete: () => Promise<void>
+}
+
+export function SubmissionDrawer({ item, onClose, onStatus, onDelete }: SubmissionDrawerProps) {
+  const { isSuperAdmin } = useAuth()
+  const { show } = useToast()
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const deletingRef = useRef(false)
   const m = item.meta
   const title = item.kind === 'contact' ? item.name : item.kind === 'application' && item.appType === 'creator' ? item.name : item.company
   const email = item.email
   const accent = item.kind === 'contact' ? T.tealInk : T.coralInk
+  const itemLabel = item.kind === 'contact' ? 'contact' : 'application'
+
+  async function removeSubmission() {
+    if (deletingRef.current) return
+    deletingRef.current = true
+    setDeleting(true)
+    try {
+      await onDelete()
+      show(`${itemLabel === 'contact' ? 'Contact' : 'Application'} deleted.`)
+      setConfirmDelete(false)
+      onClose()
+    } catch (e) {
+      show(e instanceof Error ? e.message : `Failed to delete ${itemLabel}.`, true)
+    } finally {
+      deletingRef.current = false
+      setDeleting(false)
+    }
+  }
+
   return (
     <>
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}
@@ -167,10 +199,29 @@ export function SubmissionDrawer({ item, onClose, onStatus }: { item: Submission
           <Meta label="Landed on">{m.landingPath}</Meta>
           <Meta label="Submitted from">{m.submitPath}</Meta>
 
-          <NotesSection submissionType={item.kind === 'contact' ? 'contact' : 'application'} submissionId={item.id} />
+          <NotesSection submissionType={itemLabel} submissionId={item.id} />
+
+          {isSuperAdmin && (
+            <div style={{ marginTop: 28, paddingTop: 20, borderTop: `1px solid ${T.hairline}` }}>
+              <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: T.coralInk, marginBottom: 8 }}>Danger zone</div>
+              <p style={{ fontSize: 12.5, color: T.muted, lineHeight: 1.5, margin: '0 0 12px' }}>Permanently remove this {itemLabel} and all of its internal notes.</p>
+              <Button variant="danger" onClick={() => setConfirmDelete(true)} disabled={deleting}>
+                <Icon d={IC.trash} size={15} color="#fff" />{deleting ? 'Deleting…' : `Delete ${itemLabel}`}
+              </Button>
+            </div>
+          )}
         </div>
       </motion.div>
+
+      <ConfirmDialog
+        open={confirmDelete}
+        title={`Delete this ${itemLabel}?`}
+        danger
+        body={<>This permanently deletes <b>{title}</b>, the submitted data, and all related internal notes. The action is recorded in the Activity Log and cannot be undone.</>}
+        confirmLabel={deleting ? 'Deleting…' : `Delete ${itemLabel}`}
+        onCancel={() => { if (!deleting) setConfirmDelete(false) }}
+        onConfirm={removeSubmission}
+      />
     </>
   )
 }
-
