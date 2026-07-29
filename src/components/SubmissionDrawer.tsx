@@ -139,19 +139,32 @@ export function SubmissionDrawer({ item, onClose, onStatus, onDelete }: Submissi
       <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', stiffness: 320, damping: 34 }}
         style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 'min(460px, 94vw)', background: T.surface, boxShadow: SHADOW.lift, zIndex: 50, overflowY: 'auto' }}>
         <div style={{ padding: '22px 26px 18px', borderBottom: `1px solid ${T.hairline}`, background: T.paper }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 13 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 13, minWidth: 0 }}>
               <Avatar name={title} size={48} />
-              <div>
-                <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: '-0.02em', color: T.ink }}>{title}</div>
-                <a href={`mailto:${email}`} style={{ fontSize: 13.5, color: accent, fontWeight: 600 }}>{email}</a>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: '-0.02em', color: T.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</div>
+                <a href={`mailto:${email}`} style={{ fontSize: 13.5, color: accent, fontWeight: 600, overflowWrap: 'anywhere' }}>{email}</a>
               </div>
             </div>
-            <button onClick={onClose} style={{ border: 'none', background: T.surface, borderRadius: 9, width: 32, height: 32, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: T.muted, boxShadow: SHADOW.soft }}><Icon d={IC.x} size={17} /></button>
+            <div style={{ display: 'flex', gap: 7, flexShrink: 0 }}>
+              {isSuperAdmin && (
+                <button onClick={() => setConfirmDelete(true)} disabled={deleting} title={`Delete ${itemLabel}`} aria-label={`Delete ${itemLabel}`}
+                  style={{ border: `1px solid ${T.coral}66`, background: T.tintCoral, borderRadius: 9, width: 36, height: 36, cursor: deleting ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: T.coralInk, opacity: deleting ? 0.55 : 1 }}>
+                  <Icon d={IC.trash} size={16} color={T.coralInk} />
+                </button>
+              )}
+              <button onClick={onClose} aria-label="Close submission" style={{ border: 'none', background: T.surface, borderRadius: 9, width: 36, height: 36, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: T.muted, boxShadow: SHADOW.soft }}><Icon d={IC.x} size={17} /></button>
+            </div>
           </div>
-          <div style={{ marginTop: 14, display: 'flex', gap: 8 }}>
+          <div style={{ marginTop: 14, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <a href={`mailto:${email}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 14px', borderRadius: 10, background: T.tealDeep, color: '#fff', fontSize: 13, fontWeight: 700, textDecoration: 'none' }}><Icon d={IC.mail} size={15} color="#fff" /> Reply</a>
             <span style={{ display: 'inline-flex', alignItems: 'center', padding: '9px 14px', borderRadius: 10, background: T.surface, border: `1px solid ${T.hairline}`, fontSize: 12.5, color: T.muted, fontWeight: 700 }}>{dateTime(item.createdAt)}</span>
+            {isSuperAdmin && (
+              <Button variant="danger" size="sm" onClick={() => setConfirmDelete(true)} disabled={deleting}>
+                <Icon d={IC.trash} size={14} color="#fff" />{deleting ? 'Deleting…' : `Delete ${itemLabel}`}
+              </Button>
+            )}
           </div>
         </div>
 
