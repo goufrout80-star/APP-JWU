@@ -1,7 +1,12 @@
-/* Minimal client-side CSV export — no data leaves the browser, just
-   turns already-fetched rows into a downloadable file. */
+/* Minimal client-side CSV export. User-controlled values are neutralized
+   before encoding so spreadsheet applications do not execute formulas. */
+function neutralizeFormula(value: string) {
+  return /^[\t\r ]*[=+\-@]/.test(value) ? `'${value}` : value
+}
+
 function csvCell(v: unknown): string {
-  const s = v === null || v === undefined ? '' : String(v)
+  const raw = v === null || v === undefined ? '' : String(v)
+  const s = neutralizeFormula(raw)
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
 }
 
