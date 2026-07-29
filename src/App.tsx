@@ -29,9 +29,22 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+function RecoveryAwareRoot() {
+  const location = useLocation()
+  const hasRecoveryCode = new URLSearchParams(location.search).has('code')
+  const hasRecoveryTokens = location.hash.includes('access_token=') || location.hash.includes('type=recovery')
+
+  if (hasRecoveryCode || hasRecoveryTokens) {
+    return <Navigate to={`/reset-password${location.search}${location.hash}`} replace />
+  }
+
+  return <Navigate to="/overview" replace />
+}
+
 export default function App() {
   return (
     <Routes>
+      <Route path="/" element={<RecoveryAwareRoot />} />
       <Route path="/login" element={<Login />} />
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route element={<RequireAuth><Layout /></RequireAuth>}>
@@ -44,7 +57,6 @@ export default function App() {
         <Route element={<RequireSuperAdmin />}>
           <Route path="/admins" element={<Admins />} />
         </Route>
-        <Route path="/" element={<Navigate to="/overview" replace />} />
         <Route path="*" element={<Navigate to="/overview" replace />} />
       </Route>
     </Routes>
