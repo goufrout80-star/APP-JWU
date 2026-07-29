@@ -6,6 +6,7 @@ import { supabase, IS_SUPABASE_CONFIGURED } from '../lib/supabase'
 import { T } from '../lib/theme'
 
 const EASE = [0.22, 1, 0.36, 1] as const
+const RESET_COOLDOWN_KEY = 'jwu-password-reset-cooldown-until'
 
 function PreviewChip({ tag, name, country, delay, style }: { tag: string; name: string; country: string; delay: number; style: React.CSSProperties }) {
   return (
@@ -15,6 +16,14 @@ function PreviewChip({ tag, name, country, delay, style }: { tag: string; name: 
       <span style={{ display: 'flex', flexDirection: 'column' }}><span style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>{name}</span><span style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)' }}>{country}</span></span>
     </motion.div>
   )
+}
+
+function formatCooldown(seconds: number) {
+  if (seconds >= 60) {
+    const minutes = Math.ceil(seconds / 60)
+    return `${minutes}m`
+  }
+  return `${seconds}s`
 }
 
 export default function Login() {
@@ -28,6 +37,14 @@ export default function Login() {
   const [resetBusy, setResetBusy] = useState(false)
   const [resetSent, setResetSent] = useState(false)
   const [focus, setFocus] = useState('')
+  const [clock, setClock] = useState(() => Date.now())
+  const [resetCooldownUntil, setResetCooldownUntil] = useState(() => {
+    if (typeof window === 'undefined') return 0
+    const stored = Number(window.sessionStorage.getItem(RESET_COOLDOWN_KEY) || 0)
+    return Number.isFinite(stored) ? stored : 0
+  })
+
+  const resetCooldownSeconds = Math.max(0, Math.ceil((resetCooldownUntil - clock) / 1000))
 
   useEffect(() => {
     if (user) {
@@ -35,6 +52,19 @@ export default function Login() {
       navigate(from, { replace: true })
     }
   }, [user, navigate, location.state])
+
+  useEffect(() => {
+    if (resetCooldownUntil <= Date.now()) return
+    const timer = window.setInterval(() => setClock(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [resetCooldownUntil])
+
+  function startResetCooldown(seconds: number) {
+    const until = Date.now() + seconds * 1000
+    setResetCooldownUntil(until)
+    setClock(Date.now())
+    window.sessionStorage.setItem(RESET_COOLDOWN_KEY, String(until))
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -53,6 +83,10 @@ export default function Login() {
     setError('')
     setResetSent(false)
 
+    if (resetCooldownSeconds > 0) {
+      setError(`Please wait ${formatCooldown(resetCooldownSeconds)} before requesting another reset email.`)
+      return
+    }
     if (!client || !IS_SUPABASE_CONFIGURED) {
       setError('The secure admin service is unavailable. Try again later.')
       return
@@ -69,15 +103,23 @@ export default function Login() {
     setResetBusy(false)
 
     if (resetError) {
-      setError(resetError.message)
+      const code = (resetError as { code?: string }).code
+      if (code === 'over_email_send_rate_limit' || resetError.message.toLowerCase().includes('rate limit')) {
+        startResetCooldown(60 * 60)
+        setError('The password-reset email limit has been reached. Wait about one hour, then request one new email from app.justwhyus.com.')
+      } else {
+        setError(resetError.message)
+      }
       return
     }
 
+    startResetCooldown(60)
     setResetSent(true)
   }
 
   const field = (name: string): React.CSSProperties => ({ width: '100%', padding: '14px 16px', fontSize: 15, color: T.ink, background: T.surface, border: `1.5px solid ${focus === name ? T.tealDeep : T.hairline}`, borderRadius: 13, outline: 'none', boxShadow: focus === name ? `0 0 0 4px ${T.teal}26` : 'none', boxSizing: 'border-box', transition: 'border-color .18s, box-shadow .18s' })
   const disabled = busy || !IS_SUPABASE_CONFIGURED
+  const resetDisabled = resetBusy || resetCooldownSeconds > 0 || !IS_SUPABASE_CONFIGURED
 
   return (
     <div className="login-grid" style={{ minHeight: '100dvh', display: 'grid', gridTemplateColumns: 'minmax(0,1.05fr) minmax(0,0.95fr)' }}>
@@ -99,14 +141,14 @@ export default function Login() {
           <input type="email" value={email} onChange={(e) => { setEmail(e.target.value); setResetSent(false) }} onFocus={() => setFocus('email')} onBlur={() => setFocus('')} placeholder="you@justwhyus.com" style={{ ...field('email'), marginBottom: 18 }} autoComplete="email" autoFocus />
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
             <label style={{ display: 'block', fontSize: 12, fontWeight: 800, color: T.muted }}>PASSWORD</label>
-            <button type="button" onClick={sendReset} disabled={resetBusy || !IS_SUPABASE_CONFIGURED}
-              style={{ border: 'none', background: 'transparent', padding: 0, color: T.tealInk, fontSize: 12.5, fontWeight: 800, cursor: resetBusy ? 'wait' : 'pointer' }}>
-              {resetBusy ? 'Sending…' : 'Forgot password?'}
+            <button type="button" onClick={sendReset} disabled={resetDisabled}
+              style={{ border: 'none', background: 'transparent', padding: 0, color: resetDisabled ? T.muted : T.tealInk, fontSize: 12.5, fontWeight: 800, cursor: resetBusy ? 'wait' : resetDisabled ? 'not-allowed' : 'pointer' }}>
+              {resetBusy ? 'Sending…' : resetCooldownSeconds > 0 ? `Try again in ${formatCooldown(resetCooldownSeconds)}` : 'Forgot password?'}
             </button>
           </div>
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} onFocus={() => setFocus('password')} onBlur={() => setFocus('')} placeholder="••••••••" style={field('password')} autoComplete="current-password" />
-          {resetSent && <div style={{ marginTop: 12, padding: '11px 13px', borderRadius: 11, background: T.tintTeal, color: T.tealInk, fontSize: 12.5, fontWeight: 700, lineHeight: 1.5 }}>Reset email sent. Check your inbox and spam folder, then open the secure link.</div>}
-          {error && <p style={{ fontSize: 13, color: T.coral, margin: '12px 0 0', fontWeight: 600 }}>{error}</p>}
+          {resetSent && <div style={{ marginTop: 12, padding: '11px 13px', borderRadius: 11, background: T.tintTeal, color: T.tealInk, fontSize: 12.5, fontWeight: 700, lineHeight: 1.5 }}>Reset email sent. Check your inbox and spam folder, then open the newest secure link only.</div>}
+          {error && <p style={{ fontSize: 13, color: T.coral, margin: '12px 0 0', fontWeight: 600, lineHeight: 1.45 }}>{error}</p>}
           <button type="submit" disabled={disabled} style={{ width: '100%', marginTop: 26, padding: '15px', borderRadius: 13, border: 'none', background: disabled ? T.muted : T.tealDeep, color: '#fff', fontSize: 15, fontWeight: 800, cursor: disabled ? 'not-allowed' : 'pointer' }}>{busy ? 'Signing in…' : 'Sign in →'}</button>
           {!IS_SUPABASE_CONFIGURED && <div style={{ marginTop: 24, padding: '12px 14px', borderRadius: 11, background: T.tintSun, border: '1px solid #F3E6C8', fontSize: 12.5, color: '#8A6A1E', lineHeight: 1.5 }}>The secure admin service is not configured. Sign-in is disabled until the Vercel environment variables are restored.</div>}
         </motion.form>
