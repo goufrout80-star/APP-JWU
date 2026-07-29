@@ -1,12 +1,14 @@
 import { Outlet, Navigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { DataProvider, useData } from '../lib/data'
+import { useSessionTimeout } from '../lib/useSessionTimeout'
 import { ToastProvider } from './ui'
 import { T } from '../lib/theme'
 import { Sidebar, TopBar } from './Sidebar'
 
 function Shell() {
   const { contacts, apps } = useData()
+  useSessionTimeout()
   const badges: Record<string, number> = {
     '/contacts': contacts.filter((c) => c.status === 'new').length,
     '/applications': apps.filter((a) => a.status === 'new').length,
@@ -35,8 +37,8 @@ export default function Layout() {
 }
 
 export function RequireSuperAdmin() {
-  const { isSuperAdmin, loading } = useAuth()
+  const { isSuperAdmin, loading, aal } = useAuth()
   if (loading) return null
-  if (!isSuperAdmin) return <Navigate to="/overview" replace />
+  if (!isSuperAdmin || aal !== 'aal2') return <Navigate to="/overview" replace />
   return <Outlet />
 }
