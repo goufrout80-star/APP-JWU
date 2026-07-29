@@ -39,7 +39,7 @@ interface ApplicationBase {
   createdAt: string
   email: string
   niche: string | null
-  preferredContactChannels: string[]
+  preferredContactChannels?: string[]
   status: ApplicationStatus
   meta: VisitorMeta
 }
