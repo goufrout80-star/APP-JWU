@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useAuth } from '../lib/auth'
-import { IS_SUPABASE_CONFIGURED } from '../lib/supabase'
+import { supabase, IS_SUPABASE_CONFIGURED } from '../lib/supabase'
 import { T } from '../lib/theme'
 
 const EASE = [0.22, 1, 0.36, 1] as const
@@ -25,6 +25,8 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [resetBusy, setResetBusy] = useState(false)
+  const [resetSent, setResetSent] = useState(false)
   const [focus, setFocus] = useState('')
 
   useEffect(() => {
@@ -38,10 +40,40 @@ export default function Login() {
     e.preventDefault()
     if (!IS_SUPABASE_CONFIGURED) return
     setError('')
+    setResetSent(false)
     setBusy(true)
     const res = await signIn(email, password)
     setBusy(false)
     if (!res.ok) setError(res.error || 'Sign in failed.')
+  }
+
+  async function sendReset() {
+    const client = supabase
+    const cleanEmail = email.trim().toLowerCase()
+    setError('')
+    setResetSent(false)
+
+    if (!client || !IS_SUPABASE_CONFIGURED) {
+      setError('The secure admin service is unavailable. Try again later.')
+      return
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(cleanEmail)) {
+      setError('Enter your admin email first, then click Forgot password.')
+      return
+    }
+
+    setResetBusy(true)
+    const { error: resetError } = await client.auth.resetPasswordForEmail(cleanEmail, {
+      redirectTo: 'https://app.justwhyus.com/reset-password',
+    })
+    setResetBusy(false)
+
+    if (resetError) {
+      setError(resetError.message)
+      return
+    }
+
+    setResetSent(true)
   }
 
   const field = (name: string): React.CSSProperties => ({ width: '100%', padding: '14px 16px', fontSize: 15, color: T.ink, background: T.surface, border: `1.5px solid ${focus === name ? T.tealDeep : T.hairline}`, borderRadius: 13, outline: 'none', boxShadow: focus === name ? `0 0 0 4px ${T.teal}26` : 'none', boxSizing: 'border-box', transition: 'border-color .18s, box-shadow .18s' })
@@ -64,9 +96,16 @@ export default function Login() {
           <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-0.03em', margin: '0 0 6px', color: T.ink }}>Welcome back</h2>
           <p style={{ fontSize: 14.5, color: T.muted, margin: '0 0 30px' }}>Sign in with an approved admin account.</p>
           <label style={{ display: 'block', fontSize: 12, fontWeight: 800, color: T.muted, marginBottom: 8 }}>EMAIL</label>
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} onFocus={() => setFocus('email')} onBlur={() => setFocus('')} placeholder="you@justwhyus.com" style={{ ...field('email'), marginBottom: 18 }} autoComplete="email" autoFocus />
-          <label style={{ display: 'block', fontSize: 12, fontWeight: 800, color: T.muted, marginBottom: 8 }}>PASSWORD</label>
+          <input type="email" value={email} onChange={(e) => { setEmail(e.target.value); setResetSent(false) }} onFocus={() => setFocus('email')} onBlur={() => setFocus('')} placeholder="you@justwhyus.com" style={{ ...field('email'), marginBottom: 18 }} autoComplete="email" autoFocus />
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 800, color: T.muted }}>PASSWORD</label>
+            <button type="button" onClick={sendReset} disabled={resetBusy || !IS_SUPABASE_CONFIGURED}
+              style={{ border: 'none', background: 'transparent', padding: 0, color: T.tealInk, fontSize: 12.5, fontWeight: 800, cursor: resetBusy ? 'wait' : 'pointer' }}>
+              {resetBusy ? 'Sending…' : 'Forgot password?'}
+            </button>
+          </div>
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} onFocus={() => setFocus('password')} onBlur={() => setFocus('')} placeholder="••••••••" style={field('password')} autoComplete="current-password" />
+          {resetSent && <div style={{ marginTop: 12, padding: '11px 13px', borderRadius: 11, background: T.tintTeal, color: T.tealInk, fontSize: 12.5, fontWeight: 700, lineHeight: 1.5 }}>Reset email sent. Check your inbox and spam folder, then open the secure link.</div>}
           {error && <p style={{ fontSize: 13, color: T.coral, margin: '12px 0 0', fontWeight: 600 }}>{error}</p>}
           <button type="submit" disabled={disabled} style={{ width: '100%', marginTop: 26, padding: '15px', borderRadius: 13, border: 'none', background: disabled ? T.muted : T.tealDeep, color: '#fff', fontSize: 15, fontWeight: 800, cursor: disabled ? 'not-allowed' : 'pointer' }}>{busy ? 'Signing in…' : 'Sign in →'}</button>
           {!IS_SUPABASE_CONFIGURED && <div style={{ marginTop: 24, padding: '12px 14px', borderRadius: 11, background: T.tintSun, border: '1px solid #F3E6C8', fontSize: 12.5, color: '#8A6A1E', lineHeight: 1.5 }}>The secure admin service is not configured. Sign-in is disabled until the Vercel environment variables are restored.</div>}
