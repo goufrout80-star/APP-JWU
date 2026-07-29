@@ -27,7 +27,7 @@ function BarList({ rows }: { rows: { label: string; code: string | null; count: 
 }
 
 export default function Overview() {
-  const { contacts, apps, loading, error, reload, changeStatus } = useData()
+  const { contacts, apps, loading, error, reload, changeStatus, deleteSubmission } = useData()
   const [selected, setSelected] = useState<Submission | null>(null)
   const all: Submission[] = useMemo(() => [...contacts, ...apps], [contacts, apps])
   const avgTime = all.length ? Math.round(all.reduce((s, x) => s + x.meta.timeOnSiteSec, 0) / all.length) : 0
@@ -86,6 +86,7 @@ export default function Overview() {
       <AnimatePresence>
         {selected && (
           <SubmissionDrawer key={selected.id} item={selected} onClose={() => setSelected(null)}
+            onDelete={() => deleteSubmission(selected)}
             onStatus={async (s) => { await changeStatus(selected, s); setSelected((cur) => (cur ? ({ ...cur, status: s } as Submission) : cur)) }} />
         )}
       </AnimatePresence>
