@@ -10,6 +10,7 @@ interface DataState {
   error: string | null
   reload: () => void
   changeStatus: (item: Submission, status: string) => Promise<void>
+  deleteSubmission: (item: Submission) => Promise<void>
 }
 
 const DataCtx = createContext<DataState | null>(null)
@@ -62,7 +63,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  return <DataCtx.Provider value={{ contacts, apps, loading, error, reload, changeStatus }}>{children}</DataCtx.Provider>
+  const deleteSubmission = useCallback(async (item: Submission) => {
+    const submissionType = item.kind === 'contact' ? 'contact' : 'application'
+    await api.deleteSubmission(submissionType, item.id)
+    if (item.kind === 'contact') setContacts((cs) => cs.filter((c) => c.id !== item.id))
+    else setApps((as) => as.filter((a) => a.id !== item.id))
+  }, [])
+
+  return <DataCtx.Provider value={{ contacts, apps, loading, error, reload, changeStatus, deleteSubmission }}>{children}</DataCtx.Provider>
 }
 
 export function useData() {
