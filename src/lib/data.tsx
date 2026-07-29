@@ -38,8 +38,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
   useEffect(reload, [reload])
 
   useEffect(() => {
-    if (!supabase) return
-    const channel = supabase
+    const client = supabase
+    if (!client) return
+    const channel = client
       .channel('jwu-admin-submissions')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'contacts' }, scheduleReload)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'applications' }, scheduleReload)
@@ -47,7 +48,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     return () => {
       if (reloadTimer.current) clearTimeout(reloadTimer.current)
-      void supabase.removeChannel(channel)
+      void client.removeChannel(channel)
     }
   }, [scheduleReload])
 
