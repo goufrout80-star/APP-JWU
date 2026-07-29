@@ -11,7 +11,7 @@ import { TableCard, ListShell, MobileCard, Row, th, cell } from '../components/S
 import type { Application, Submission } from '../lib/types'
 
 export default function Applications() {
-  const { apps, loading, error, reload, changeStatus } = useData()
+  const { apps, loading, error, reload, changeStatus, deleteSubmission } = useData()
   const isMobile = useIsMobile()
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<'all' | 'creator' | 'brand'>('all')
@@ -75,6 +75,7 @@ export default function Applications() {
       <AnimatePresence>
         {selected && (
           <SubmissionDrawer key={selected.id} item={selected} onClose={() => setSelected(null)}
+            onDelete={() => deleteSubmission(selected)}
             onStatus={async (s) => { await changeStatus(selected, s); setSelected((cur) => (cur ? ({ ...cur, status: s } as Submission) as Application : cur)) }} />
         )}
       </AnimatePresence>
