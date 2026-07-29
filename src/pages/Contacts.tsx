@@ -12,7 +12,7 @@ import { relative } from '../lib/format'
 import type { ContactSubmission, Submission } from '../lib/types'
 
 export default function Contacts() {
-  const { contacts, loading, error, reload, changeStatus } = useData()
+  const { contacts, loading, error, reload, changeStatus, deleteSubmission } = useData()
   const isMobile = useIsMobile()
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<ContactSubmission | null>(null)
@@ -57,6 +57,7 @@ export default function Contacts() {
       <AnimatePresence>
         {selected && (
           <SubmissionDrawer key={selected.id} item={selected} onClose={() => setSelected(null)}
+            onDelete={() => deleteSubmission(selected)}
             onStatus={async (s) => { await changeStatus(selected, s); setSelected((cur) => (cur ? ({ ...cur, status: s } as Submission) as ContactSubmission : cur)) }} />
         )}
       </AnimatePresence>

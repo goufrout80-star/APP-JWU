@@ -16,6 +16,7 @@ export interface DataApi {
   listApplications(): Promise<Application[]>
   setContactStatus(id: string, status: ContactStatus): Promise<void>
   setApplicationStatus(id: string, status: ApplicationStatus): Promise<void>
+  deleteSubmission(submissionType: 'contact' | 'application', id: string): Promise<void>
 
   listAdmins(): Promise<AdminRecord[]>
   addAdmin(email: string, role: AdminRole): Promise<void>
@@ -89,6 +90,14 @@ class SupabaseApi implements DataApi {
 
   async setApplicationStatus(id: string, status: ApplicationStatus) {
     const { error } = await this.client().from('applications').update({ status }).eq('id', id)
+    if (error) throw new Error(error.message)
+  }
+
+  async deleteSubmission(submissionType: 'contact' | 'application', id: string) {
+    const { error } = await this.client().rpc('delete_submission', {
+      p_submission_type: submissionType,
+      p_submission_id: id,
+    })
     if (error) throw new Error(error.message)
   }
 
