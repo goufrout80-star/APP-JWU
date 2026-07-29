@@ -28,10 +28,6 @@ export default function MfaSetup() {
       const client = supabase
       if (!client) return setError('The secure authentication service is unavailable.')
       try {
-        const { data: existing } = await client.auth.mfa.listFactors()
-        for (const factor of existing?.totp ?? []) {
-          if (factor.status === 'unverified') await client.auth.mfa.unenroll({ factorId: factor.id })
-        }
         const { data, error: enrollError } = await client.auth.mfa.enroll({
           factorType: 'totp',
           friendlyName: `JWU Admin · ${user.email}`,
