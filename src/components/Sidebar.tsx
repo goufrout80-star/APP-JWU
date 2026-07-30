@@ -4,11 +4,12 @@ import { useAuth } from '../lib/auth'
 import { T } from '../lib/theme'
 import { Icon, IC, Avatar, RoleBadge } from './ui'
 
-interface NavItem { to: string; label: string; icon: string; superAdminOnly?: boolean }
+interface NavItem { to: string; label: string; icon: string; superAdminOnly?: boolean; pageAccessOnly?: boolean }
 const NAV: NavItem[] = [
   { to: '/overview', label: 'Overview', icon: IC.grid },
   { to: '/contacts', label: 'Contacts', icon: IC.inbox },
   { to: '/applications', label: 'Applications', icon: IC.users },
+  { to: '/pages', label: 'Pages', icon: IC.globe, pageAccessOnly: true },
   { to: '/admins', label: 'Admins / Team', icon: IC.shield, superAdminOnly: true },
   { to: '/analytics', label: 'Analytics', icon: IC.chart },
   { to: '/activity', label: 'Activity Log', icon: IC.activity },
@@ -16,10 +17,10 @@ const NAV: NavItem[] = [
 ]
 
 function NavRows({ badges, onNavigate }: { badges: Record<string, number>; onNavigate?: () => void }) {
-  const { isSuperAdmin } = useAuth()
+  const { isSuperAdmin, hasPageAccess } = useAuth()
   return (
     <>
-      {NAV.filter((n) => !n.superAdminOnly || isSuperAdmin).map((n) => (
+      {NAV.filter((n) => (!n.superAdminOnly || isSuperAdmin) && (!n.pageAccessOnly || hasPageAccess)).map((n) => (
         <NavLink key={n.to} to={n.to} onClick={onNavigate}
           style={({ isActive }) => ({
             display: 'flex', alignItems: 'center', gap: 11, textAlign: 'left', padding: '11px 12px', borderRadius: 11,
@@ -67,7 +68,7 @@ export function Sidebar({ badges }: { badges: Record<string, number> }) {
         <img src="/favicon.svg" alt="JWU" width={32} height={32} style={{ borderRadius: 9, display: 'block' }} />
         <div style={{ lineHeight: 1.1 }}>
           <div style={{ fontWeight: 900, fontSize: 14.5, letterSpacing: '-0.02em', color: T.ink }}>JWU Admin</div>
-          <div style={{ fontSize: 11, color: T.muted }}>Submissions & team</div>
+          <div style={{ fontSize: 11, color: T.muted }}>Submissions, pages & team</div>
         </div>
       </div>
       <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '0.1em', color: T.muted, padding: '4px 12px 6px' }}>MENU</div>
