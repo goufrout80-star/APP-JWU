@@ -19,6 +19,7 @@ export interface VisitorMeta {
 
 export type ContactStatus = 'new' | 'read' | 'replied' | 'archived'
 export type ApplicationStatus = 'new' | 'reviewing' | 'accepted' | 'rejected'
+export type PageAccessLevel = 'viewer' | 'manager'
 
 export interface ContactSubmission {
   id: string
@@ -67,10 +68,60 @@ export type Submission = ContactSubmission | Application
 export type AdminRole = 'admin' | 'super_admin'
 
 export interface AdminRecord {
+  userId: string
   email: string
   role: AdminRole
   active: boolean
   displayName: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ManagedPage {
+  id: string
+  slug: string
+  name: string
+  domain: string
+  description: string | null
+  active: boolean
+  enabledModules: string[]
+  accentColor: string | null
+  notificationEmail: string | null
+  accessLevel: PageAccessLevel
+  createdAt: string
+  updatedAt: string
+}
+
+export interface AdminPageAccess {
+  pageId: string
+  adminUserId: string
+  accessLevel: PageAccessLevel
+  grantedBy: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface PageContact {
+  id: string
+  pageId: string
+  site: string
+  name: string
+  company: string | null
+  email: string
+  website: string | null
+  contactRole: string | null
+  collaboration: string | null
+  budget: string | null
+  timeline: string | null
+  objective: string | null
+  deliverables: string[]
+  targetMarkets: string | null
+  productStatus: string | null
+  message: string
+  status: ContactStatus
+  details: Record<string, unknown>
+  consentedAt: string | null
+  meta: VisitorMeta
   createdAt: string
   updatedAt: string
 }

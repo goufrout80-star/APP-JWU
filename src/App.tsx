@@ -5,10 +5,12 @@ import Login from './pages/Login'
 import ResetPassword from './pages/ResetPassword'
 import MfaSetup from './pages/MfaSetup'
 import MfaChallenge from './pages/MfaChallenge'
-import Layout, { RequireSuperAdmin } from './components/Layout'
+import Layout, { RequirePageAccess, RequireSuperAdmin } from './components/Layout'
 import Overview from './pages/Overview'
 import Contacts from './pages/Contacts'
 import Applications from './pages/Applications'
+import Pages from './pages/Pages'
+import PageContacts from './pages/PageContacts'
 import Admins from './pages/Admins'
 import Analytics from './pages/Analytics'
 import ActivityLog from './pages/ActivityLog'
@@ -65,6 +67,10 @@ export default function App() {
         <Route path="/overview" element={<Overview />} />
         <Route path="/contacts" element={<Contacts />} />
         <Route path="/applications" element={<Applications />} />
+        <Route element={<RequirePageAccess />}>
+          <Route path="/pages" element={<Pages />} />
+          <Route path="/pages/:slug/contacts" element={<PageContacts />} />
+        </Route>
         <Route path="/analytics" element={<Analytics />} />
         <Route path="/activity" element={<ActivityLog />} />
         <Route path="/settings" element={<Settings />} />

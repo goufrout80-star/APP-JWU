@@ -10,6 +10,7 @@ interface AuthState {
   loading: boolean
   securityLoading: boolean
   isSuperAdmin: boolean
+  hasPageAccess: boolean
   aal: AssuranceLevel
   mfaEnrolled: boolean
   mfaFactorId: string | null
@@ -24,6 +25,7 @@ const AuthCtx = createContext<AuthState>({
   loading: true,
   securityLoading: true,
   isSuperAdmin: false,
+  hasPageAccess: false,
   aal: null,
   mfaEnrolled: false,
   mfaFactorId: null,
@@ -59,6 +61,18 @@ async function fetchSecurityState() {
   }
 }
 
+async function fetchPageAccess(userId: string, admin: AdminUser, aal: AssuranceLevel) {
+  if (admin.role === 'super_admin') return true
+  const client = supabase
+  if (!client || aal !== 'aal2') return false
+  const { count, error } = await client
+    .from('admin_page_access')
+    .select('page_id', { count: 'exact', head: true })
+    .eq('admin_user_id', userId)
+  if (error) return false
+  return (count ?? 0) > 0
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AdminUser | null>(null)
   const [loading, setLoading] = useState(IS_SUPABASE_CONFIGURED)
@@ -66,6 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [aal, setAal] = useState<AssuranceLevel>(null)
   const [mfaEnrolled, setMfaEnrolled] = useState(false)
   const [mfaFactorId, setMfaFactorId] = useState<string | null>(null)
+  const [hasPageAccess, setHasPageAccess] = useState(false)
 
   async function applySession(sessionUserId?: string) {
     const client = supabase
@@ -74,6 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setAal(null)
       setMfaEnrolled(false)
       setMfaFactorId(null)
+      setHasPageAccess(false)
       setLoading(false)
       setSecurityLoading(false)
       return
@@ -87,6 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setAal(null)
       setMfaEnrolled(false)
       setMfaFactorId(null)
+      setHasPageAccess(false)
       setLoading(false)
       setSecurityLoading(false)
       return
@@ -98,6 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setAal(security.aal)
       setMfaEnrolled(security.enrolled)
       setMfaFactorId(security.factorId)
+      setHasPageAccess(await fetchPageAccess(sessionUserId, admin, security.aal))
     } finally {
       setLoading(false)
       setSecurityLoading(false)
@@ -150,6 +168,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAal(null)
     setMfaEnrolled(false)
     setMfaFactorId(null)
+    setHasPageAccess(false)
   }
 
   const refreshSecurity = async () => {
@@ -165,6 +184,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading,
       securityLoading,
       isSuperAdmin: user?.role === 'super_admin',
+      hasPageAccess,
       aal,
       mfaEnrolled,
       mfaFactorId,

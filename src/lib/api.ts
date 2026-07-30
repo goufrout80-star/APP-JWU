@@ -1,11 +1,13 @@
 /* ════════════════════════════════════════════════════════════════
-   Data layer — Supabase-backed. Reads the protected contacts and
-   applications tables and uses narrow RPCs for sensitive mutations.
+   Data layer — Supabase-backed. Reads protected JWU submissions,
+   managed pages and page-specific contacts. Sensitive mutations use
+   narrow RPCs with server-side role and MFA checks.
    ════════════════════════════════════════════════════════════════ */
 import type {
   Application, ContactSubmission, VisitorMeta,
   ContactStatus, ApplicationStatus,
   AdminRecord, AdminRole, ActivityLogEntry, SubmissionNote, AppSettings,
+  ManagedPage, AdminPageAccess, PageAccessLevel, PageContact,
 } from './types'
 import { supabase, IS_SUPABASE_CONFIGURED } from './supabase'
 
@@ -20,6 +22,11 @@ export interface DataApi {
   setAdminActive(email: string, active: boolean): Promise<void>
   setAdminRole(email: string, role: AdminRole): Promise<void>
   removeAdmin(email: string): Promise<void>
+  listManagedPages(): Promise<ManagedPage[]>
+  listPageContacts(pageId: string): Promise<PageContact[]>
+  setPageContactStatus(id: string, status: ContactStatus): Promise<void>
+  listAdminPageAccess(): Promise<AdminPageAccess[]>
+  setAdminPageAccess(adminUserId: string, pageId: string, level: PageAccessLevel | 'none'): Promise<void>
   listActivityLog(limit?: number): Promise<ActivityLogEntry[]>
   listNotes(submissionType: 'contact' | 'application', submissionId: string): Promise<SubmissionNote[]>
   addNote(submissionType: 'contact' | 'application', submissionId: string, body: string): Promise<void>
@@ -53,7 +60,7 @@ type Row = Record<string, any>
 
 class SupabaseApi implements DataApi {
   private client() {
-    if (!supabase) throw new Error('Supabase is not configured — set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.')
+    if (!supabase) throw new Error('Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.')
     return supabase
   }
 
@@ -96,7 +103,7 @@ class SupabaseApi implements DataApi {
   async listAdmins(): Promise<AdminRecord[]> {
     const { data, error } = await this.client().from('admins').select('*').order('created_at', { ascending: true })
     if (error) throw new Error(error.message)
-    return (data as Row[]).map((r) => ({ email: r.email, role: r.role, active: r.active, displayName: r.display_name, createdAt: r.created_at, updatedAt: r.updated_at }))
+    return (data as Row[]).map((r) => ({ userId: r.user_id, email: r.email, role: r.role, active: r.active, displayName: r.display_name, createdAt: r.created_at, updatedAt: r.updated_at }))
   }
 
   async addAdmin(email: string, role: AdminRole) {
@@ -116,6 +123,95 @@ class SupabaseApi implements DataApi {
 
   async removeAdmin(email: string) {
     const { error } = await this.client().from('admins').delete().eq('email', email)
+    if (error) throw new Error(error.message)
+  }
+
+  async listManagedPages(): Promise<ManagedPage[]> {
+    const client = this.client()
+    const { data: userData } = await client.auth.getUser()
+    const userId = userData.user?.id
+    if (!userId) throw new Error('Not signed in.')
+
+    const [{ data: pages, error: pagesError }, { data: admin, error: adminError }, { data: access, error: accessError }] = await Promise.all([
+      client.from('managed_pages').select('*').eq('active', true).order('name'),
+      client.from('admins').select('role').eq('user_id', userId).maybeSingle(),
+      client.from('admin_page_access').select('*').eq('admin_user_id', userId),
+    ])
+    if (pagesError) throw new Error(pagesError.message)
+    if (adminError) throw new Error(adminError.message)
+    if (accessError) throw new Error(accessError.message)
+
+    const byPage = new Map((access as Row[]).map((row) => [row.page_id, row.access_level as PageAccessLevel]))
+    const superAdmin = admin?.role === 'super_admin'
+    return (pages as Row[]).map((r) => ({
+      id: r.id,
+      slug: r.slug,
+      name: r.name,
+      domain: r.domain,
+      description: r.description,
+      active: r.active,
+      enabledModules: Array.isArray(r.enabled_modules) ? r.enabled_modules : [],
+      accentColor: r.accent_color,
+      notificationEmail: r.notification_email,
+      accessLevel: superAdmin ? 'manager' : (byPage.get(r.id) ?? 'viewer'),
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+    }))
+  }
+
+  async listPageContacts(pageId: string): Promise<PageContact[]> {
+    const { data, error } = await this.client().from('page_contacts').select('*').eq('page_id', pageId).order('created_at', { ascending: false })
+    if (error) throw new Error(error.message)
+    return (data as Row[]).map((r) => ({
+      id: r.id,
+      pageId: r.page_id,
+      site: r.site,
+      name: r.name,
+      company: r.company,
+      email: r.email,
+      website: r.website,
+      contactRole: r.contact_role,
+      collaboration: r.collaboration,
+      budget: r.budget,
+      timeline: r.timeline,
+      objective: r.objective,
+      deliverables: Array.isArray(r.deliverables) ? r.deliverables : [],
+      targetMarkets: r.target_markets,
+      productStatus: r.product_status,
+      message: r.message,
+      status: r.status,
+      details: r.details ?? {},
+      consentedAt: r.consented_at,
+      meta: metaFromRow(r.meta),
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+    }))
+  }
+
+  async setPageContactStatus(id: string, status: ContactStatus) {
+    const { error } = await this.client().rpc('update_page_contact_status', { p_contact_id: id, p_status: status })
+    if (error) throw new Error(error.message)
+  }
+
+  async listAdminPageAccess(): Promise<AdminPageAccess[]> {
+    const { data, error } = await this.client().from('admin_page_access').select('*').order('created_at', { ascending: true })
+    if (error) throw new Error(error.message)
+    return (data as Row[]).map((r) => ({
+      pageId: r.page_id,
+      adminUserId: r.admin_user_id,
+      accessLevel: r.access_level,
+      grantedBy: r.granted_by,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+    }))
+  }
+
+  async setAdminPageAccess(adminUserId: string, pageId: string, level: PageAccessLevel | 'none') {
+    const { error } = await this.client().rpc('set_admin_page_access', {
+      p_admin_user_id: adminUserId,
+      p_page_id: pageId,
+      p_access_level: level,
+    })
     if (error) throw new Error(error.message)
   }
 
