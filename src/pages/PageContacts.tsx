@@ -3,11 +3,12 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { Link, useParams } from 'react-router-dom'
 import { api } from '../lib/api'
 import { supabase } from '../lib/supabase'
+import { useAuth } from '../lib/auth'
 import { useIsMobile } from '../lib/breakpoint'
 import { dateTime, relative } from '../lib/format'
 import { T, SHADOW } from '../lib/theme'
 import type { ContactStatus, ManagedPage, PageContact } from '../lib/types'
-import { PageHeader, Icon, IC, ErrorBanner, SkeletonRows, StatusBadge, StatusSelect, Avatar, Badge, Country } from '../components/ui'
+import { PageHeader, Icon, IC, ErrorBanner, SkeletonRows, StatusBadge, StatusSelect, Avatar, Badge, Country, ConfirmDialog } from '../components/ui'
 import { TableCard, ListShell, MobileCard, Row, th, cell } from '../components/SubmissionTable'
 
 const STATUSES: ContactStatus[] = ['new', 'read', 'replied', 'archived']
@@ -39,9 +40,12 @@ function Section({ children }: { children: React.ReactNode }) {
   return <div style={{ margin: '23px 0 7px', color: T.tealInk, fontSize: 10.5, fontWeight: 900, letterSpacing: '.1em', textTransform: 'uppercase' }}>{children}</div>
 }
 
-function PageContactDrawer({ page, item, onClose, onStatus }: { page: ManagedPage; item: PageContact; onClose: () => void; onStatus: (status: ContactStatus) => Promise<void> }) {
+function PageContactDrawer({ page, item, onClose, onStatus, onDelete }: { page: ManagedPage; item: PageContact; onClose: () => void; onStatus: (status: ContactStatus) => Promise<void>; onDelete: () => Promise<void> }) {
+  const { isSuperAdmin } = useAuth()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const website = safeUrl(item.website)
   const canManage = page.accessLevel === 'manager'
 
@@ -52,6 +56,21 @@ function PageContactDrawer({ page, item, onClose, onStatus }: { page: ManagedPag
     try { await onStatus(status as ContactStatus) }
     catch (e) { setError(e instanceof Error ? e.message : 'Could not update status.') }
     finally { setBusy(false) }
+  }
+
+  async function remove() {
+    if (deleting) return
+    setDeleting(true)
+    setError('')
+    try {
+      await onDelete()
+      setConfirmDelete(false)
+      onClose()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not delete this page contact.')
+    } finally {
+      setDeleting(false)
+    }
   }
 
   return (
@@ -70,7 +89,10 @@ function PageContactDrawer({ page, item, onClose, onStatus }: { page: ManagedPag
                 <a href={`mailto:${item.email}`} style={{ color: T.tealInk, fontSize: 13, fontWeight: 700 }}>{item.email}</a>
               </div>
             </div>
-            <button onClick={onClose} aria-label="Close contact" style={{ width: 36, height: 36, border: `1px solid ${T.hairline}`, background: T.surface, borderRadius: 10, display: 'grid', placeItems: 'center', cursor: 'pointer' }}><Icon d={IC.x} size={17} /></button>
+            <div style={{ display: 'flex', gap: 7 }}>
+              {isSuperAdmin && <button onClick={() => setConfirmDelete(true)} aria-label="Delete page contact" title="Delete page contact" style={{ width: 36, height: 36, border: `1px solid ${T.coral}55`, background: T.tintCoral, color: T.coralInk, borderRadius: 10, display: 'grid', placeItems: 'center', cursor: 'pointer' }}><Icon d={IC.trash} size={16} color={T.coralInk} /></button>}
+              <button onClick={onClose} aria-label="Close contact" style={{ width: 36, height: 36, border: `1px solid ${T.hairline}`, background: T.surface, borderRadius: 10, display: 'grid', placeItems: 'center', cursor: 'pointer' }}><Icon d={IC.x} size={17} /></button>
+            </div>
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 14 }}>
             <a href={`mailto:${item.email}?subject=${encodeURIComponent(`${reference(item)} · Today Film Makers partnership inquiry`)}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 13px', borderRadius: 10, background: T.tealDeep, color: '#fff', fontSize: 12.5, fontWeight: 800 }}><Icon d={IC.mail} size={14} color="#fff" />Reply</a>
@@ -108,8 +130,16 @@ function PageContactDrawer({ page, item, onClose, onStatus }: { page: ManagedPag
           <DetailRow label="Location"><Country m={item.meta} /></DetailRow>
           <DetailRow label="Timezone">{item.meta.timezone || 'Unknown'}</DetailRow>
           <DetailRow label="Referrer">{item.meta.referrer || 'Direct'}</DetailRow>
+
+          {isSuperAdmin && <div style={{ marginTop: 28, paddingTop: 20, borderTop: `1px solid ${T.hairline}` }}><div style={{ color: T.coralInk, fontSize: 10.5, fontWeight: 900, letterSpacing: '.1em', textTransform: 'uppercase' }}>Danger zone</div><p style={{ color: T.muted, fontSize: 12.5, lineHeight: 1.5 }}>Permanently delete this page contact. The action is recorded in the Activity Log.</p><button onClick={() => setConfirmDelete(true)} style={{ border: 0, borderRadius: 10, padding: '9px 13px', background: T.coral, color: '#fff', fontWeight: 800, cursor: 'pointer' }}><Icon d={IC.trash} size={14} color="#fff" /> Delete contact</button></div>}
         </div>
       </motion.aside>
+
+      <ConfirmDialog open={confirmDelete} title="Delete this page contact?" danger
+        body={<>This permanently removes <b>{item.name}</b>&apos;s Today Film Makers inquiry. The deletion is logged and cannot be undone.</>}
+        confirmLabel={deleting ? 'Deleting…' : 'Delete contact'}
+        onCancel={() => { if (!deleting) setConfirmDelete(false) }}
+        onConfirm={remove} />
     </>
   )
 }
@@ -183,6 +213,14 @@ export default function PageContacts() {
     setSelected((current) => current ? { ...current, status: nextStatus } : current)
   }
 
+  async function deleteSelected() {
+    if (!selected) return
+    const id = selected.id
+    await api.deletePageContact(id)
+    setContacts((rows) => rows.filter((row) => row.id !== id))
+    setSelected(null)
+  }
+
   const filterBar = page ? (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
       <Link to="/pages" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: T.muted, fontSize: 12.5, fontWeight: 750 }}><span>←</span> All pages</Link>
@@ -218,7 +256,7 @@ export default function PageContacts() {
       )}
 
       <AnimatePresence>
-        {page && selected && <PageContactDrawer key={selected.id} page={page} item={selected} onClose={() => setSelected(null)} onStatus={updateSelected} />}
+        {page && selected && <PageContactDrawer key={selected.id} page={page} item={selected} onClose={() => setSelected(null)} onStatus={updateSelected} onDelete={deleteSelected} />}
       </AnimatePresence>
     </>
   )
