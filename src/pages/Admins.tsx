@@ -5,6 +5,7 @@ import { T, SHADOW } from '../lib/theme'
 import { dateTime } from '../lib/format'
 import type { AdminRecord, AdminRole } from '../lib/types'
 import { PageHeader, Button, Icon, IC, Avatar, RoleBadge, Badge, ConfirmDialog, EmptyState, SkeletonRows, ErrorBanner, useToast } from '../components/ui'
+import { PageAccessPanel } from '../components/PageAccessPanel'
 
 function AddAdminForm({ onAdded }: { onAdded: () => void }) {
   const [email, setEmail] = useState('')
@@ -98,19 +99,16 @@ function AdminRow({ admin, isSelf, onChanged }: { admin: AdminRecord; isSelf: bo
         )}
       </div>
 
-      <ConfirmDialog
-        open={confirm === 'deactivate'} title="Deactivate this admin?" danger
-        body={<>This immediately revokes <b>{admin.email}</b>'s access to contacts, applications, and all admin data — enforced server-side, not just hidden in the UI.</>}
+      <ConfirmDialog open={confirm === 'deactivate'} title="Deactivate this admin?" danger
+        body={<>This immediately revokes <b>{admin.email}</b>&apos;s access to contacts, applications, managed pages, and all admin data.</>}
         confirmLabel="Deactivate" onCancel={() => setConfirm(null)}
         onConfirm={() => run(() => api.setAdminActive(admin.email, false), `${admin.email} deactivated.`)} />
-      <ConfirmDialog
-        open={confirm === 'reactivate'} title="Reactivate this admin?"
-        body={<>Restores <b>{admin.email}</b>'s access immediately.</>}
+      <ConfirmDialog open={confirm === 'reactivate'} title="Reactivate this admin?"
+        body={<>Restores <b>{admin.email}</b>&apos;s core admin access. Managed page permissions remain controlled separately below.</>}
         confirmLabel="Reactivate" onCancel={() => setConfirm(null)}
         onConfirm={() => run(() => api.setAdminActive(admin.email, true), `${admin.email} reactivated.`)} />
-      <ConfirmDialog
-        open={confirm === 'remove'} title="Remove this admin?" danger
-        body={<>Permanently removes <b>{admin.email}</b> from the admin list. This can't be undone from here — you'd need to add them back manually.</>}
+      <ConfirmDialog open={confirm === 'remove'} title="Remove this admin?" danger
+        body={<>Permanently removes <b>{admin.email}</b> from the admin list and revokes any managed page access.</>}
         confirmLabel="Remove" onCancel={() => setConfirm(null)}
         onConfirm={() => run(() => api.removeAdmin(admin.email), `${admin.email} removed.`)} />
     </>
@@ -131,7 +129,7 @@ export default function Admins() {
 
   return (
     <>
-      <PageHeader title="Admins / Team" description="Who has access to the admin dashboard, and what they can do" />
+      <PageHeader title="Admins / Team" description="Control dashboard roles and granular access to each managed media page" />
       {error && <ErrorBanner message={error} onRetry={load} />}
       <div style={{ background: T.surface, border: `1px solid ${T.hairline}`, borderRadius: 20, boxShadow: SHADOW.soft, padding: 20, marginBottom: 18 }}>
         <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, marginBottom: 12 }}>Add a new admin</div>
@@ -146,6 +144,8 @@ export default function Admins() {
           admins.map((a) => <AdminRow key={a.email} admin={a} isSelf={a.email.toLowerCase() === user?.email.toLowerCase()} onChanged={load} />)
         )}
       </div>
+
+      {!loading && admins.length > 0 && <PageAccessPanel admins={admins} />}
     </>
   )
 }
