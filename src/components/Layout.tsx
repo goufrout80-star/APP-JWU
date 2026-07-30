@@ -42,3 +42,10 @@ export function RequireSuperAdmin() {
   if (!isSuperAdmin || aal !== 'aal2') return <Navigate to="/overview" replace />
   return <Outlet />
 }
+
+export function RequirePageAccess() {
+  const { hasPageAccess, loading, securityLoading, aal } = useAuth()
+  if (loading || securityLoading) return null
+  if (!hasPageAccess || aal !== 'aal2') return <Navigate to="/overview" replace />
+  return <Outlet />
+}
