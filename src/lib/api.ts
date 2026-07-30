@@ -25,6 +25,7 @@ export interface DataApi {
   listManagedPages(): Promise<ManagedPage[]>
   listPageContacts(pageId: string): Promise<PageContact[]>
   setPageContactStatus(id: string, status: ContactStatus): Promise<void>
+  deletePageContact(id: string): Promise<void>
   listAdminPageAccess(): Promise<AdminPageAccess[]>
   setAdminPageAccess(adminUserId: string, pageId: string, level: PageAccessLevel | 'none'): Promise<void>
   listActivityLog(limit?: number): Promise<ActivityLogEntry[]>
@@ -107,7 +108,7 @@ class SupabaseApi implements DataApi {
   }
 
   async addAdmin(email: string, role: AdminRole) {
-    const { error } = await this.client().from('admins').insert({ email: email.trim().toLowerCase(), role })
+    const { error } = await this.client().rpc('add_existing_admin', { p_email: email.trim().toLowerCase(), p_role: role })
     if (error) throw new Error(error.message)
   }
 
@@ -190,6 +191,11 @@ class SupabaseApi implements DataApi {
 
   async setPageContactStatus(id: string, status: ContactStatus) {
     const { error } = await this.client().rpc('update_page_contact_status', { p_contact_id: id, p_status: status })
+    if (error) throw new Error(error.message)
+  }
+
+  async deletePageContact(id: string) {
+    const { error } = await this.client().rpc('delete_page_contact', { p_contact_id: id })
     if (error) throw new Error(error.message)
   }
 
