@@ -1,12 +1,13 @@
 /* ════════════════════════════════════════════════════════════════
    Data layer — Supabase-backed. Reads protected JWU submissions,
    managed pages and page-specific contacts. Sensitive mutations use
-   narrow RPCs with server-side role and MFA checks.
+   narrow RPCs or protected server endpoints with role and MFA checks.
    ════════════════════════════════════════════════════════════════ */
 import type {
   Application, ContactSubmission, VisitorMeta,
   ContactStatus, ApplicationStatus,
-  AdminRecord, AdminRole, ActivityLogEntry, SubmissionNote, AppSettings,
+  AdminRecord, AdminRole, AdminInvite, AdminNotification,
+  ActivityLogEntry, SubmissionNote, AppSettings,
   ManagedPage, AdminPageAccess, PageAccessLevel, PageContact,
 } from './types'
 import { supabase, IS_SUPABASE_CONFIGURED } from './supabase'
@@ -18,7 +19,10 @@ export interface DataApi {
   setApplicationStatus(id: string, status: ApplicationStatus): Promise<void>
   deleteSubmission(submissionType: 'contact' | 'application', id: string): Promise<void>
   listAdmins(): Promise<AdminRecord[]>
-  addAdmin(email: string, role: AdminRole): Promise<void>
+  listAdminInvites(): Promise<AdminInvite[]>
+  inviteAdmin(email: string, displayName: string, role: AdminRole, pageAccess?: Record<string, PageAccessLevel>): Promise<AdminInvite>
+  resendAdminInvite(inviteId: string): Promise<AdminInvite>
+  revokeAdminInvite(inviteId: string): Promise<AdminInvite>
   setAdminActive(email: string, active: boolean): Promise<void>
   setAdminRole(email: string, role: AdminRole): Promise<void>
   removeAdmin(email: string): Promise<void>
@@ -28,6 +32,9 @@ export interface DataApi {
   deletePageContact(id: string): Promise<void>
   listAdminPageAccess(): Promise<AdminPageAccess[]>
   setAdminPageAccess(adminUserId: string, pageId: string, level: PageAccessLevel | 'none'): Promise<void>
+  listNotifications(limit?: number): Promise<AdminNotification[]>
+  markNotificationRead(id: string): Promise<void>
+  markAllNotificationsRead(): Promise<void>
   listActivityLog(limit?: number): Promise<ActivityLogEntry[]>
   listNotes(submissionType: 'contact' | 'application', submissionId: string): Promise<SubmissionNote[]>
   addNote(submissionType: 'contact' | 'application', submissionId: string, body: string): Promise<void>
@@ -63,6 +70,27 @@ class SupabaseApi implements DataApi {
   private client() {
     if (!supabase) throw new Error('Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.')
     return supabase
+  }
+
+  private async adminRequest<T>(body?: Record<string, unknown>, method: 'GET' | 'POST' = 'POST'): Promise<T> {
+    const client = this.client()
+    const { data, error } = await client.auth.getSession()
+    if (error) throw new Error(error.message)
+    const accessToken = data.session?.access_token
+    if (!accessToken) throw new Error('Your secure admin session has expired. Sign in again.')
+
+    const response = await fetch('/api/admin-management', {
+      method,
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+        ...(method === 'POST' ? { 'Content-Type': 'application/json' } : {}),
+      },
+      ...(method === 'POST' ? { body: JSON.stringify(body ?? {}) } : {}),
+    })
+    const payload = await response.json().catch(() => null) as { ok?: boolean; message?: string; result?: T; invites?: T } | null
+    if (!response.ok || !payload?.ok) throw new Error(payload?.message || 'The team-management request failed.')
+    return (method === 'GET' ? payload.invites : payload.result) as T
   }
 
   async listContacts(): Promise<ContactSubmission[]> {
@@ -107,24 +135,32 @@ class SupabaseApi implements DataApi {
     return (data as Row[]).map((r) => ({ userId: r.user_id, email: r.email, role: r.role, active: r.active, displayName: r.display_name, createdAt: r.created_at, updatedAt: r.updated_at }))
   }
 
-  async addAdmin(email: string, role: AdminRole) {
-    const { error } = await this.client().rpc('add_existing_admin', { p_email: email.trim().toLowerCase(), p_role: role })
-    if (error) throw new Error(error.message)
+  async listAdminInvites(): Promise<AdminInvite[]> {
+    return this.adminRequest<AdminInvite[]>(undefined, 'GET')
+  }
+
+  async inviteAdmin(email: string, displayName: string, role: AdminRole, pageAccess: Record<string, PageAccessLevel> = {}): Promise<AdminInvite> {
+    return this.adminRequest<AdminInvite>({ action: 'invite', email: email.trim().toLowerCase(), displayName: displayName.trim(), role, pageAccess })
+  }
+
+  async resendAdminInvite(inviteId: string): Promise<AdminInvite> {
+    return this.adminRequest<AdminInvite>({ action: 'resend_invite', inviteId })
+  }
+
+  async revokeAdminInvite(inviteId: string): Promise<AdminInvite> {
+    return this.adminRequest<AdminInvite>({ action: 'revoke_invite', inviteId })
   }
 
   async setAdminActive(email: string, active: boolean) {
-    const { error } = await this.client().from('admins').update({ active, updated_at: new Date().toISOString() }).eq('email', email)
-    if (error) throw new Error(error.message)
+    await this.adminRequest({ action: 'set_active', email, active })
   }
 
   async setAdminRole(email: string, role: AdminRole) {
-    const { error } = await this.client().from('admins').update({ role, updated_at: new Date().toISOString() }).eq('email', email)
-    if (error) throw new Error(error.message)
+    await this.adminRequest({ action: 'set_role', email, role })
   }
 
   async removeAdmin(email: string) {
-    const { error } = await this.client().from('admins').delete().eq('email', email)
-    if (error) throw new Error(error.message)
+    await this.adminRequest({ action: 'remove_admin', email })
   }
 
   async listManagedPages(): Promise<ManagedPage[]> {
@@ -213,11 +249,31 @@ class SupabaseApi implements DataApi {
   }
 
   async setAdminPageAccess(adminUserId: string, pageId: string, level: PageAccessLevel | 'none') {
-    const { error } = await this.client().rpc('set_admin_page_access', {
-      p_admin_user_id: adminUserId,
-      p_page_id: pageId,
-      p_access_level: level,
-    })
+    await this.adminRequest({ action: 'set_page_access', adminUserId, pageId, accessLevel: level })
+  }
+
+  async listNotifications(limit = 100): Promise<AdminNotification[]> {
+    const { data, error } = await this.client().from('admin_notifications').select('*').order('created_at', { ascending: false }).limit(limit)
+    if (error) throw new Error(error.message)
+    return (data as Row[]).map((r) => ({
+      id: r.id,
+      recipientUserId: r.recipient_user_id,
+      type: r.type,
+      title: r.title,
+      message: r.message,
+      detail: r.detail ?? {},
+      readAt: r.read_at,
+      createdAt: r.created_at,
+    }))
+  }
+
+  async markNotificationRead(id: string) {
+    const { error } = await this.client().rpc('mark_admin_notification_read', { p_notification_id: id })
+    if (error) throw new Error(error.message)
+  }
+
+  async markAllNotificationsRead() {
+    const { error } = await this.client().rpc('mark_all_admin_notifications_read')
     if (error) throw new Error(error.message)
   }
 
