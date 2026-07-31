@@ -8,12 +8,14 @@ export default function MfaSetup() {
   const { user, aal, mfaEnrolled, securityLoading, refreshSecurity, signOut } = useAuth()
   const navigate = useNavigate()
   const started = useRef(false)
+  const [setupAttempt, setSetupAttempt] = useState(0)
   const [factorId, setFactorId] = useState('')
   const [qrCode, setQrCode] = useState('')
   const [secret, setSecret] = useState('')
   const [code, setCode] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [preparing, setPreparing] = useState(true)
 
   useEffect(() => {
     if (securityLoading || !user) return
@@ -24,25 +26,80 @@ export default function MfaSetup() {
     if (started.current) return
     started.current = true
 
+    let active = true
+
     void (async () => {
       const client = supabase
-      if (!client) return setError('The secure authentication service is unavailable.')
+      if (!client) {
+        if (active) {
+          setPreparing(false)
+          setError('The secure authentication service is unavailable.')
+        }
+        return
+      }
+
       try {
+        setPreparing(true)
+        setError('')
+
+        const { data: sessionData, error: sessionError } = await client.auth.getSession()
+        if (sessionError) throw sessionError
+        const accessToken = sessionData.session?.access_token
+        if (!accessToken) throw new Error('Your secure session has expired. Sign in again.')
+
+        const prepareResponse = await fetch('/api/prepare-mfa-enrollment', {
+          method: 'POST',
+          headers: {
+            Accept: 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+          },
+        })
+        const prepareData = await prepareResponse.json().catch(() => null) as { ok?: boolean; has_verified_factor?: boolean; message?: string } | null
+        if (!prepareResponse.ok || !prepareData?.ok) {
+          throw new Error(prepareData?.message || 'Could not prepare MFA setup.')
+        }
+
+        if (prepareData.has_verified_factor) {
+          await refreshSecurity()
+          if (active) navigate('/mfa/challenge', { replace: true })
+          return
+        }
+
         const { data, error: enrollError } = await client.auth.mfa.enroll({
           factorType: 'totp',
           friendlyName: `JWU Admin · ${user.email}`,
         })
         if (enrollError) throw enrollError
+
+        if (!active) return
         setFactorId(data.id)
         setQrCode(data.totp.qr_code)
         setSecret(data.totp.secret)
       } catch (e) {
+        if (!active) return
         setError(e instanceof Error ? e.message : 'Could not start MFA setup.')
+      } finally {
+        if (active) setPreparing(false)
       }
     })()
-  }, [aal, mfaEnrolled, navigate, securityLoading, user])
+
+    return () => {
+      active = false
+    }
+  }, [aal, mfaEnrolled, navigate, refreshSecurity, securityLoading, setupAttempt, user])
 
   if (!securityLoading && !user) return <Navigate to="/login" replace />
+
+  function restartSetup() {
+    started.current = false
+    setFactorId('')
+    setQrCode('')
+    setSecret('')
+    setCode('')
+    setError('')
+    setPreparing(true)
+    setSetupAttempt((value) => value + 1)
+  }
 
   async function verify() {
     const client = supabase
@@ -87,14 +144,24 @@ export default function MfaSetup() {
             </div>
             <label htmlFor="mfa-code" style={{ display: 'block', marginTop: 22, marginBottom: 7, color: T.ink, fontSize: 12, fontWeight: 800 }}>6-DIGIT CODE</label>
             <input id="mfa-code" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              onKeyDown={(e) => { if (e.key === 'Enter') void verify() }}
               style={{ width: '100%', boxSizing: 'border-box', padding: '14px 16px', borderRadius: 12, border: `1.5px solid ${T.hairline}`, fontSize: 20, letterSpacing: '0.28em', textAlign: 'center', color: T.ink, background: T.surface }} />
             <button type="button" onClick={verify} disabled={busy || code.length !== 6} style={{ width: '100%', marginTop: 16, padding: 14, border: 0, borderRadius: 12, background: T.tealDeep, color: '#fff', fontWeight: 800, cursor: busy ? 'wait' : 'pointer', opacity: busy || code.length !== 6 ? 0.6 : 1 }}>
               {busy ? 'Verifying…' : 'Enable MFA'}
             </button>
           </>
-        ) : !error ? <p style={{ marginTop: 24, color: T.muted }}>Preparing secure setup…</p> : null}
+        ) : preparing ? (
+          <p style={{ marginTop: 24, color: T.muted }}>Preparing a fresh secure QR code…</p>
+        ) : null}
 
-        {error && <div role="alert" style={{ marginTop: 15, padding: 12, borderRadius: 11, background: T.tintCoral, color: T.coralInk, fontSize: 13, lineHeight: 1.5 }}>{error}</div>}
+        {error && (
+          <div role="alert" style={{ marginTop: 15, padding: 12, borderRadius: 11, background: T.tintCoral, color: T.coralInk, fontSize: 13, lineHeight: 1.5 }}>
+            <div>{error}</div>
+            <button type="button" onClick={restartSetup} style={{ marginTop: 10, padding: '9px 12px', borderRadius: 9, border: `1px solid ${T.hairline}`, background: T.surface, color: T.ink, fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}>
+              Generate a fresh QR code
+            </button>
+          </div>
+        )}
         <button type="button" onClick={signOut} style={{ marginTop: 20, border: 0, background: 'transparent', color: T.muted, fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>Sign out</button>
       </section>
     </main>
