@@ -3,6 +3,7 @@ import { useAuth } from './lib/auth'
 import { T } from './lib/theme'
 import Login from './pages/Login'
 import ResetPassword from './pages/ResetPassword'
+import AcceptInvite from './pages/AcceptInvite'
 import MfaSetup from './pages/MfaSetup'
 import MfaChallenge from './pages/MfaChallenge'
 import Layout, { RequirePageAccess, RequireSuperAdmin } from './components/Layout'
@@ -12,6 +13,7 @@ import Applications from './pages/Applications'
 import Pages from './pages/Pages'
 import PageContacts from './pages/PageContacts'
 import Admins from './pages/Admins'
+import Notifications from './pages/Notifications'
 import Analytics from './pages/Analytics'
 import ActivityLog from './pages/ActivityLog'
 import Settings from './pages/Settings'
@@ -61,6 +63,7 @@ export default function App() {
       <Route path="/" element={<RecoveryAwareRoot />} />
       <Route path="/login" element={<Login />} />
       <Route path="/reset-password" element={<ResetPassword />} />
+      <Route path="/accept-invite" element={<AcceptInvite />} />
       <Route path="/mfa/setup" element={<RequireAuth><MfaSetup /></RequireAuth>} />
       <Route path="/mfa/challenge" element={<RequireAuth><MfaChallenge /></RequireAuth>} />
       <Route element={<RequireSecureAuth><Layout /></RequireSecureAuth>}>
@@ -71,6 +74,7 @@ export default function App() {
           <Route path="/pages" element={<Pages />} />
           <Route path="/pages/:slug/contacts" element={<PageContacts />} />
         </Route>
+        <Route path="/notifications" element={<Notifications />} />
         <Route path="/analytics" element={<Analytics />} />
         <Route path="/activity" element={<ActivityLog />} />
         <Route path="/settings" element={<Settings />} />
