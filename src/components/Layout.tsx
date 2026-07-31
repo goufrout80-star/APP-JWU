@@ -1,5 +1,7 @@
+import { useEffect, useState } from 'react'
 import { Outlet, Navigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
+import { api } from '../lib/api'
 import { DataProvider, useData } from '../lib/data'
 import { useSessionTimeout } from '../lib/useSessionTimeout'
 import { ToastProvider } from './ui'
@@ -8,11 +10,40 @@ import { Sidebar, TopBar } from './Sidebar'
 
 function Shell() {
   const { contacts, apps } = useData()
+  const [unreadNotifications, setUnreadNotifications] = useState(0)
   useSessionTimeout()
+
+  useEffect(() => {
+    let active = true
+    let timer = 0
+
+    async function loadNotificationCount() {
+      try {
+        const rows = await api.listNotifications(100)
+        if (active) setUnreadNotifications(rows.filter((row) => !row.readAt).length)
+      } catch {
+        if (active) setUnreadNotifications(0)
+      }
+    }
+
+    const onChanged = () => void loadNotificationCount()
+    void loadNotificationCount()
+    window.addEventListener('jwu-notifications-changed', onChanged)
+    timer = window.setInterval(loadNotificationCount, 60_000)
+
+    return () => {
+      active = false
+      window.removeEventListener('jwu-notifications-changed', onChanged)
+      window.clearInterval(timer)
+    }
+  }, [])
+
   const badges: Record<string, number> = {
     '/contacts': contacts.filter((c) => c.status === 'new').length,
     '/applications': apps.filter((a) => a.status === 'new').length,
+    '/notifications': unreadNotifications,
   }
+
   return (
     <div className="app-shell" style={{ display: 'grid', gridTemplateColumns: '248px 1fr', minHeight: '100dvh', background: T.paper }}>
       <Sidebar badges={badges} />
