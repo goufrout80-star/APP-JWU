@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useAuth } from '../lib/auth'
-import { supabase, IS_SUPABASE_CONFIGURED } from '../lib/supabase'
+import { IS_SUPABASE_CONFIGURED } from '../lib/supabase'
 import { T } from '../lib/theme'
 
 const EASE = [0.22, 1, 0.36, 1] as const
@@ -41,7 +41,8 @@ export default function Login() {
   const [resetCooldownUntil, setResetCooldownUntil] = useState(() => {
     if (typeof window === 'undefined') return 0
     const stored = Number(window.sessionStorage.getItem(RESET_COOLDOWN_KEY) || 0)
-    return Number.isFinite(stored) ? stored : 0
+    if (!Number.isFinite(stored)) return 0
+    return stored - Date.now() > 60_000 ? 0 : stored
   })
 
   const resetCooldownSeconds = Math.max(0, Math.ceil((resetCooldownUntil - clock) / 1000))
@@ -78,7 +79,6 @@ export default function Login() {
   }
 
   async function sendReset() {
-    const client = supabase
     const cleanEmail = email.trim().toLowerCase()
     setError('')
     setResetSent(false)
@@ -87,7 +87,7 @@ export default function Login() {
       setError(`Please wait ${formatCooldown(resetCooldownSeconds)} before requesting another reset email.`)
       return
     }
-    if (!client || !IS_SUPABASE_CONFIGURED) {
+    if (!IS_SUPABASE_CONFIGURED) {
       setError('The secure admin service is unavailable. Try again later.')
       return
     }
@@ -97,24 +97,29 @@ export default function Login() {
     }
 
     setResetBusy(true)
-    const { error: resetError } = await client.auth.resetPasswordForEmail(cleanEmail, {
-      redirectTo: 'https://app.justwhyus.com/reset-password',
-    })
-    setResetBusy(false)
 
-    if (resetError) {
-      const code = (resetError as { code?: string }).code
-      if (code === 'over_email_send_rate_limit' || resetError.message.toLowerCase().includes('rate limit')) {
-        startResetCooldown(60 * 60)
-        setError('The password-reset email limit has been reached. Wait about one hour, then request one new email from app.justwhyus.com.')
-      } else {
-        setError(resetError.message)
+    try {
+      const response = await fetch('/api/request-password-reset', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({ email: cleanEmail }),
+      })
+
+      const payload = await response.json().catch(() => null) as { message?: string } | null
+      if (!response.ok) {
+        throw new Error(payload?.message || 'The reset request could not be completed. Try again shortly.')
       }
-      return
-    }
 
-    startResetCooldown(60)
-    setResetSent(true)
+      startResetCooldown(60)
+      setResetSent(true)
+    } catch (resetError) {
+      setError(resetError instanceof Error ? resetError.message : 'The reset request could not be completed. Try again shortly.')
+    } finally {
+      setResetBusy(false)
+    }
   }
 
   const field = (name: string): React.CSSProperties => ({ width: '100%', padding: '14px 16px', fontSize: 15, color: T.ink, background: T.surface, border: `1.5px solid ${focus === name ? T.tealDeep : T.hairline}`, borderRadius: 13, outline: 'none', boxShadow: focus === name ? `0 0 0 4px ${T.teal}26` : 'none', boxSizing: 'border-box', transition: 'border-color .18s, box-shadow .18s' })
@@ -147,7 +152,7 @@ export default function Login() {
             </button>
           </div>
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} onFocus={() => setFocus('password')} onBlur={() => setFocus('')} placeholder="••••••••" style={field('password')} autoComplete="current-password" />
-          {resetSent && <div style={{ marginTop: 12, padding: '11px 13px', borderRadius: 11, background: T.tintTeal, color: T.tealInk, fontSize: 12.5, fontWeight: 700, lineHeight: 1.5 }}>Reset email sent. Check your inbox and spam folder, then open the newest secure link only.</div>}
+          {resetSent && <div style={{ marginTop: 12, padding: '11px 13px', borderRadius: 11, background: T.tintTeal, color: T.tealInk, fontSize: 12.5, fontWeight: 700, lineHeight: 1.5 }}>Reset email requested. Check your inbox and spam folder, then open the newest secure link only.</div>}
           {error && <p style={{ fontSize: 13, color: T.coral, margin: '12px 0 0', fontWeight: 600, lineHeight: 1.45 }}>{error}</p>}
           <button type="submit" disabled={disabled} style={{ width: '100%', marginTop: 26, padding: '15px', borderRadius: 13, border: 'none', background: disabled ? T.muted : T.tealDeep, color: '#fff', fontSize: 15, fontWeight: 800, cursor: disabled ? 'not-allowed' : 'pointer' }}>{busy ? 'Signing in…' : 'Sign in →'}</button>
           {!IS_SUPABASE_CONFIGURED && <div style={{ marginTop: 24, padding: '12px 14px', borderRadius: 11, background: T.tintSun, border: '1px solid #F3E6C8', fontSize: 12.5, color: '#8A6A1E', lineHeight: 1.5 }}>The secure admin service is not configured. Sign-in is disabled until the Vercel environment variables are restored.</div>}
