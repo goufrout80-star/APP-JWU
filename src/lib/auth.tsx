@@ -34,6 +34,10 @@ const AuthCtx = createContext<AuthState>({
   refreshSecurity: async () => {},
 })
 
+function isInviteOnboardingRoute() {
+  return typeof window !== 'undefined' && window.location.pathname.startsWith('/accept-invite')
+}
+
 async function fetchRole(userId: string): Promise<AdminUser | null> {
   const client = supabase
   if (!client) return null
@@ -98,7 +102,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSecurityLoading(true)
     const admin = await fetchRole(sessionUserId)
     if (!admin) {
-      await client.auth.signOut()
+      // Invitation links create a temporary authenticated recovery session before
+      // the admin row is activated. Keep that session only on the onboarding route.
+      if (!isInviteOnboardingRoute()) await client.auth.signOut()
       setUser(null)
       setAal(null)
       setMfaEnrolled(false)
