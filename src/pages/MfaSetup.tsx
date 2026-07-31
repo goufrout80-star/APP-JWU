@@ -42,25 +42,27 @@ export default function MfaSetup() {
         setPreparing(true)
         setError('')
 
-        const { data: factors, error: factorsError } = await client.auth.mfa.listFactors()
-        if (factorsError) throw factorsError
+        const { data: sessionData, error: sessionError } = await client.auth.getSession()
+        if (sessionError) throw sessionError
+        const accessToken = sessionData.session?.access_token
+        if (!accessToken) throw new Error('Your secure session has expired. Sign in again.')
 
-        const totpFactors = factors?.totp ?? []
-        const verifiedFactor = totpFactors.find((factor) => factor.status === 'verified')
+        const prepareResponse = await fetch('/api/prepare-mfa-enrollment', {
+          method: 'POST',
+          headers: {
+            Accept: 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+          },
+        })
+        const prepareData = await prepareResponse.json().catch(() => null) as { ok?: boolean; has_verified_factor?: boolean; message?: string } | null
+        if (!prepareResponse.ok || !prepareData?.ok) {
+          throw new Error(prepareData?.message || 'Could not prepare MFA setup.')
+        }
 
-        if (verifiedFactor) {
+        if (prepareData.has_verified_factor) {
           await refreshSecurity()
           if (active) navigate('/mfa/challenge', { replace: true })
           return
-        }
-
-        // An interrupted setup leaves an unverified factor behind. Supabase then
-        // rejects another enrollment using the same friendly name. Remove only
-        // those incomplete factors before generating a fresh QR code.
-        const staleFactors = totpFactors.filter((factor) => factor.status === 'unverified')
-        for (const factor of staleFactors) {
-          const { error: unenrollError } = await client.auth.mfa.unenroll({ factorId: factor.id })
-          if (unenrollError) throw unenrollError
         }
 
         const { data, error: enrollError } = await client.auth.mfa.enroll({
