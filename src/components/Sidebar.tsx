@@ -11,6 +11,7 @@ const NAV: NavItem[] = [
   { to: '/applications', label: 'Applications', icon: IC.users },
   { to: '/pages', label: 'Pages', icon: IC.globe, pageAccessOnly: true },
   { to: '/admins', label: 'Admins / Team', icon: IC.shield, superAdminOnly: true },
+  { to: '/notifications', label: 'Notifications', icon: IC.bell },
   { to: '/analytics', label: 'Analytics', icon: IC.chart },
   { to: '/activity', label: 'Activity Log', icon: IC.activity },
   { to: '/settings', label: 'Settings', icon: IC.settings },
