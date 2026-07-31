@@ -5,6 +5,15 @@ import { supabase, IS_SUPABASE_CONFIGURED } from '../lib/supabase'
 import { T } from '../lib/theme'
 
 const EASE = [0.22, 1, 0.36, 1] as const
+const INVALID_LINK_MESSAGE = 'This reset link is invalid or has expired. Request a new reset email from the login page.'
+
+function wait(milliseconds: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds))
+}
+
+function clearRecoveryTokensFromUrl() {
+  window.history.replaceState({}, document.title, window.location.pathname)
+}
 
 export default function ResetPassword() {
   const navigate = useNavigate()
@@ -14,40 +23,92 @@ export default function ResetPassword() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [linkError, setLinkError] = useState('')
   const [success, setSuccess] = useState(false)
   const [focus, setFocus] = useState('')
 
   useEffect(() => {
     const client = supabase
     if (!IS_SUPABASE_CONFIGURED || !client) {
+      setLinkError('The secure authentication service is unavailable.')
       setChecking(false)
       return
     }
 
     let active = true
-    const timer = window.setTimeout(() => {
-      if (active) setChecking(false)
-    }, 4000)
 
-    client.auth.getSession().then(({ data }) => {
+    function acceptRecoverySession() {
       if (!active) return
-      if (data.session) {
-        setReady(true)
-        setChecking(false)
-      }
-    })
+      clearRecoveryTokensFromUrl()
+      setReady(true)
+      setLinkError('')
+      setChecking(false)
+    }
 
     const { data: listener } = client.auth.onAuthStateChange((event, session) => {
-      if (!active) return
-      if (event === 'PASSWORD_RECOVERY' || session) {
-        setReady(true)
-        setChecking(false)
+      if (!active || !session) return
+      if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+        acceptRecoverySession()
       }
     })
+
+    void (async () => {
+      try {
+        const url = new URL(window.location.href)
+        const query = url.searchParams
+        const hash = new URLSearchParams(url.hash.replace(/^#/, ''))
+        const authError = hash.get('error_description') || query.get('error_description')
+
+        if (authError) {
+          throw new Error(authError)
+        }
+
+        const accessToken = hash.get('access_token')
+        const refreshToken = hash.get('refresh_token')
+        const authorizationCode = query.get('code')
+
+        if (accessToken && refreshToken) {
+          const { error: sessionError } = await client.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          })
+          if (sessionError) throw sessionError
+        } else if (authorizationCode) {
+          const { error: exchangeError } = await client.auth.exchangeCodeForSession(authorizationCode)
+          if (exchangeError) throw exchangeError
+        }
+
+        let sessionFound = false
+        for (let attempt = 0; attempt < 20; attempt += 1) {
+          const { data, error: sessionError } = await client.auth.getSession()
+          if (sessionError) throw sessionError
+          if (data.session) {
+            sessionFound = true
+            break
+          }
+          await wait(250)
+        }
+
+        if (!sessionFound) {
+          throw new Error(INVALID_LINK_MESSAGE)
+        }
+
+        const { data: userData, error: userError } = await client.auth.getUser()
+        if (userError || !userData.user) {
+          throw userError || new Error(INVALID_LINK_MESSAGE)
+        }
+
+        acceptRecoverySession()
+      } catch (recoveryError) {
+        if (!active) return
+        const message = recoveryError instanceof Error ? recoveryError.message : INVALID_LINK_MESSAGE
+        setLinkError(message.toLowerCase().includes('expired') || message.toLowerCase().includes('invalid') ? INVALID_LINK_MESSAGE : message)
+        setChecking(false)
+      }
+    })()
 
     return () => {
       active = false
-      window.clearTimeout(timer)
       listener.subscription.unsubscribe()
     }
   }, [])
@@ -58,7 +119,7 @@ export default function ResetPassword() {
     setError('')
 
     if (!client || !ready) {
-      setError('This reset link is invalid or has expired. Request a new one from the login page.')
+      setError(INVALID_LINK_MESSAGE)
       return
     }
     if (password.length < 12) {
@@ -136,7 +197,7 @@ export default function ResetPassword() {
         ) : (
           <div>
             <div style={{ padding: '14px 15px', borderRadius: 13, background: T.tintCoral, color: T.coralInk, fontSize: 13.5, lineHeight: 1.55 }}>
-              This reset link is invalid or has expired. Request a new reset email from the login page.
+              {linkError || INVALID_LINK_MESSAGE}
             </div>
             <button type="button" onClick={() => navigate('/login')} style={{ width: '100%', marginTop: 18, padding: '13px', borderRadius: 13, border: `1px solid ${T.hairline}`, background: T.surface, color: T.ink, fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>
               Back to sign in
