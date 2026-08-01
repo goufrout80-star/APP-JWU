@@ -23,8 +23,22 @@ function safeUrl(value: string | null) {
   }
 }
 
-function reference(item: PageContact) {
-  return `TFM-${new Date(item.createdAt).getUTCFullYear()}-${item.id.slice(0, 6).toUpperCase()}`
+function pagePrefix(page: ManagedPage, item: PageContact) {
+  const stored = item.details?.referencePrefix
+  if (typeof stored === 'string' && /^[A-Z0-9]{2,8}$/.test(stored)) return stored
+  if (page.slug === 'todayfilmmakers') return 'TFM'
+  if (page.slug === 'thephotoshopguide') return 'TPG'
+  const initials = page.name
+    .split(/\s+/)
+    .map((word) => word[0])
+    .join('')
+    .replace(/[^A-Z0-9]/gi, '')
+    .toUpperCase()
+  return initials.slice(0, 6) || 'JWU'
+}
+
+function reference(page: ManagedPage, item: PageContact) {
+  return `${pagePrefix(page, item)}-${new Date(item.createdAt).getUTCFullYear()}-${item.id.slice(0, 6).toUpperCase()}`
 }
 
 function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
@@ -48,6 +62,7 @@ function PageContactDrawer({ page, item, onClose, onStatus, onDelete }: { page: 
   const [deleting, setDeleting] = useState(false)
   const website = safeUrl(item.website)
   const canManage = page.accessLevel === 'manager'
+  const contactReference = reference(page, item)
 
   async function change(status: string) {
     if (!canManage || busy) return
@@ -95,8 +110,8 @@ function PageContactDrawer({ page, item, onClose, onStatus, onDelete }: { page: 
             </div>
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 14 }}>
-            <a href={`mailto:${item.email}?subject=${encodeURIComponent(`${reference(item)} · Today Film Makers partnership inquiry`)}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 13px', borderRadius: 10, background: T.tealDeep, color: '#fff', fontSize: 12.5, fontWeight: 800 }}><Icon d={IC.mail} size={14} color="#fff" />Reply</a>
-            <Badge fg={T.muted} bg={T.surface}>{reference(item)}</Badge>
+            <a href={`mailto:${item.email}?subject=${encodeURIComponent(`${contactReference} · ${page.name} partnership inquiry`)}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 13px', borderRadius: 10, background: T.tealDeep, color: '#fff', fontSize: 12.5, fontWeight: 800 }}><Icon d={IC.mail} size={14} color="#fff" />Reply</a>
+            <Badge fg={T.muted} bg={T.surface}>{contactReference}</Badge>
             <Badge fg={canManage ? T.tealInk : T.muted} bg={canManage ? T.tintTeal : T.surface}>{canManage ? 'Manager access' : 'Viewer access'}</Badge>
           </div>
         </header>
@@ -136,7 +151,7 @@ function PageContactDrawer({ page, item, onClose, onStatus, onDelete }: { page: 
       </motion.aside>
 
       <ConfirmDialog open={confirmDelete} title="Delete this page contact?" danger
-        body={<>This permanently removes <b>{item.name}</b>&apos;s Today Film Makers inquiry. The deletion is logged and cannot be undone.</>}
+        body={<>This permanently removes <b>{item.name}</b>&apos;s {page.name} inquiry. The deletion is logged and cannot be undone.</>}
         confirmLabel={deleting ? 'Deleting…' : 'Delete contact'}
         onCancel={() => { if (!deleting) setConfirmDelete(false) }}
         onConfirm={remove} />
@@ -229,17 +244,21 @@ export default function PageContacts() {
     </div>
   ) : null
 
+  const emptyLabel = page
+    ? `New ${page.name} inquiries will appear here automatically.`
+    : 'New managed-page inquiries will appear here automatically.'
+
   return (
     <>
       <PageHeader title={page ? `${page.name} contacts` : 'Page contacts'} description={page ? `Partnership inquiries received from ${page.domain}` : 'Loading managed page'} />
       {filterBar}
       {error && <ErrorBanner message={error} onRetry={load} />}
       {loading ? <SkeletonRows rows={5} /> : isMobile ? (
-        <ListShell search={search} setSearch={setSearch} count={filtered.length} emptyLabel={contacts.length === 0 ? 'New Today Film Makers inquiries will appear here automatically.' : 'No contacts match the current filters.'}>
+        <ListShell search={search} setSearch={setSearch} count={filtered.length} emptyLabel={contacts.length === 0 ? emptyLabel : 'No contacts match the current filters.'}>
           {filtered.map((item) => <MobileCard key={item.id} onClick={() => void open(item)} isNew={item.status === 'new'} name={item.name} avatarName={item.name} sub={`${item.company || 'No company'} · ${item.collaboration || 'Campaign inquiry'}`} status={item.status} meta={item.meta} />)}
         </ListShell>
       ) : (
-        <TableCard search={search} setSearch={setSearch} count={filtered.length} emptyLabel={contacts.length === 0 ? 'New Today Film Makers inquiries will appear here automatically.' : 'No contacts match the current filters.'}
+        <TableCard search={search} setSearch={setSearch} count={filtered.length} emptyLabel={contacts.length === 0 ? emptyLabel : 'No contacts match the current filters.'}
           head={['Contact', 'Company', 'Collaboration', 'Budget', 'Objective', 'When', 'Status'].map((heading) => <th key={heading} style={th}>{heading}</th>)}>
           {filtered.map((item) => (
             <Row key={item.id} onClick={() => void open(item)} isNew={item.status === 'new'}>
