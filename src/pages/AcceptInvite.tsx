@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import type { Session } from '@supabase/supabase-js'
@@ -26,7 +26,6 @@ export default function AcceptInvite() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const inviteId = searchParams.get('invite') || ''
-  const inviteTokenRef = useRef('')
   const [ready, setReady] = useState(false)
   const [checking, setChecking] = useState(true)
   const [accountEmail, setAccountEmail] = useState('')
@@ -57,20 +56,16 @@ export default function AcceptInvite() {
 
     function acceptSession(session: Session) {
       const email = session.user?.email
-      const accessToken = session.access_token
-      if (!active || !email || !accessToken) return
+      if (!active || !email) return
 
-      // Keep the recovery token in memory until the account activation request
-      // finishes. Supabase recovery callbacks can notify listeners before the
-      // refreshed session has fully persisted to storage.
-      inviteTokenRef.current = accessToken
       setAccountEmail(email)
       setReady(true)
       setLinkError('')
       setChecking(false)
 
-      // Remove sensitive callback parameters only after the token has been
-      // captured. The invite ID remains so refreshes can still show a clear state.
+      // Remove sensitive callback parameters after Supabase has identified the
+      // invited email. Account activation no longer depends on this temporary
+      // recovery session, so later automatic logout cannot break the invite.
       window.setTimeout(() => {
         if (active) {
           window.history.replaceState({}, document.title, `/accept-invite?invite=${encodeURIComponent(inviteId)}`)
@@ -79,7 +74,7 @@ export default function AcceptInvite() {
     }
 
     const { data: listener } = client.auth.onAuthStateChange((_event, session) => {
-      if (session?.user?.email && session.access_token) acceptSession(session)
+      if (session?.user?.email) acceptSession(session)
     })
 
     void (async () => {
@@ -107,7 +102,7 @@ export default function AcceptInvite() {
           establishedSession = data.session
         }
 
-        if (establishedSession?.user?.email && establishedSession.access_token) {
+        if (establishedSession?.user?.email) {
           acceptSession(establishedSession)
           return
         }
@@ -115,7 +110,7 @@ export default function AcceptInvite() {
         for (let attempt = 0; attempt < 20; attempt += 1) {
           const { data, error: sessionError } = await client.auth.getSession()
           if (sessionError) throw sessionError
-          if (data.session?.user?.email && data.session.access_token) {
+          if (data.session?.user?.email) {
             acceptSession(data.session)
             return
           }
@@ -142,7 +137,7 @@ export default function AcceptInvite() {
     const client = supabase
     setError('')
 
-    if (!client || !ready || !inviteId) {
+    if (!client || !ready || !inviteId || !accountEmail) {
       setError(INVALID_INVITE)
       return
     }
@@ -157,30 +152,28 @@ export default function AcceptInvite() {
 
     setBusy(true)
     try {
-      let accessToken = inviteTokenRef.current
-      const { data, error: sessionError } = await client.auth.getSession()
-      if (sessionError) throw sessionError
-      if (data.session?.access_token) {
-        accessToken = data.session.access_token
-        inviteTokenRef.current = accessToken
-      }
-      if (!accessToken) throw new Error(INVALID_INVITE)
-
       const response = await fetch('/api/accept-admin-invite', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Accept: 'application/json',
-          Authorization: `Bearer ${accessToken}`,
         },
         body: JSON.stringify({ inviteId, password }),
       })
-      const payload = await response.json().catch(() => null) as { ok?: boolean; message?: string; next?: string } | null
+      const payload = await response.json().catch(() => null) as { ok?: boolean; email?: string; message?: string; next?: string } | null
       if (!response.ok || !payload?.ok) throw new Error(payload?.message || 'Could not create the admin account.')
 
-      inviteTokenRef.current = ''
+      const signInEmail = payload.email || accountEmail
+      const { error: signInError } = await client.auth.signInWithPassword({
+        email: signInEmail,
+        password,
+      })
+      if (signInError) {
+        throw new Error('Your account was created, but automatic sign-in failed. Open the sign-in page and use the password you just created.')
+      }
+
       setSuccess(true)
-      window.setTimeout(() => window.location.replace(payload.next || '/mfa/setup'), 1000)
+      window.setTimeout(() => window.location.replace(payload.next || '/mfa/setup'), 700)
     } catch (acceptError) {
       setError(acceptError instanceof Error ? acceptError.message : 'Could not create the admin account.')
     } finally {

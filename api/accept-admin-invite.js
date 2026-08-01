@@ -1,8 +1,8 @@
 import {
+  createServiceClient,
   notifyAdminEvent,
   normalizeEmail,
   parseBody,
-  requireAuthenticatedInviteUser,
   safeText,
   setSecurityHeaders,
   verifyOrigin,
@@ -23,6 +23,10 @@ function validPassword(password) {
     && /[^A-Za-z0-9]/.test(password)
 }
 
+function validInviteId(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+}
+
 export default async function handler(request, response) {
   setSecurityHeaders(response)
 
@@ -33,15 +37,12 @@ export default async function handler(request, response) {
   if (!verifyOrigin(request)) return errorResponse(response, 403, 'Request origin is not allowed.')
 
   try {
-    const context = await requireAuthenticatedInviteUser(request)
-    if (context.error) return errorResponse(response, context.error.status, context.error.message)
-    const { supabase, authUser } = context
-
+    const supabase = createServiceClient()
     const body = parseBody(request)
     const inviteId = safeText(body.inviteId || body.invite_id, 80)
     const password = typeof body.password === 'string' ? body.password : ''
 
-    if (!inviteId) return errorResponse(response, 422, 'Invitation ID is required.')
+    if (!validInviteId(inviteId)) return errorResponse(response, 422, 'This invitation link is not valid.')
     if (!validPassword(password)) {
       return errorResponse(response, 422, 'Use at least 12 characters with uppercase, lowercase, a number and a symbol.')
     }
@@ -60,24 +61,30 @@ export default async function handler(request, response) {
       return errorResponse(response, 410, 'This invitation has expired. Ask AuraX to resend it.')
     }
 
-    const userEmail = normalizeEmail(authUser.email)
-    if (invite.auth_user_id !== authUser.id || normalizeEmail(invite.email) !== userEmail) {
-      return errorResponse(response, 403, 'This invitation belongs to a different email account.')
+    const { data: userData, error: userError } = await supabase.auth.admin.getUserById(invite.auth_user_id)
+    const authUser = userData?.user
+    if (userError || !authUser?.id || !authUser.email) {
+      return errorResponse(response, 410, 'The invited account is no longer available. Ask AuraX for a new invitation.')
     }
 
+    const userEmail = normalizeEmail(authUser.email)
+    if (invite.auth_user_id !== authUser.id || normalizeEmail(invite.email) !== userEmail) {
+      return errorResponse(response, 403, 'This invitation does not match the invited account.')
+    }
+
+    const displayName = invite.display_name || userEmail.split('@')[0]
     const { error: passwordError } = await supabase.auth.admin.updateUserById(authUser.id, {
       password,
       email_confirm: true,
       user_metadata: {
         ...(authUser.user_metadata || {}),
-        display_name: invite.display_name || userEmail.split('@')[0],
+        display_name: displayName,
         onboarding: 'admin_invite_accepted',
       },
     })
     if (passwordError) throw passwordError
 
     const acceptedAt = new Date().toISOString()
-    const displayName = invite.display_name || userEmail.split('@')[0]
 
     const { error: adminError } = await supabase.from('admins').upsert({
       email: userEmail,
@@ -114,6 +121,7 @@ export default async function handler(request, response) {
         updated_at: acceptedAt,
       })
       .eq('id', invite.id)
+      .in('status', ['pending', 'failed'])
     if (updateInviteError) throw updateInviteError
 
     const actor = {
@@ -149,6 +157,7 @@ export default async function handler(request, response) {
 
     return response.status(200).json({
       ok: true,
+      email: userEmail,
       message: 'Your admin account is ready. Complete authenticator setup next.',
       next: '/mfa/setup',
     })
