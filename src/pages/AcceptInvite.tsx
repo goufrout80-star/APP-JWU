@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
+import type { Session } from '@supabase/supabase-js'
 import { supabase, IS_SUPABASE_CONFIGURED } from '../lib/supabase'
 import { T } from '../lib/theme'
 
@@ -25,6 +26,7 @@ export default function AcceptInvite() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const inviteId = searchParams.get('invite') || ''
+  const inviteTokenRef = useRef('')
   const [ready, setReady] = useState(false)
   const [checking, setChecking] = useState(true)
   const [accountEmail, setAccountEmail] = useState('')
@@ -53,18 +55,31 @@ export default function AcceptInvite() {
 
     let active = true
 
-    function acceptSession(email: string) {
-      if (!active) return
-      window.history.replaceState({}, document.title, `/accept-invite?invite=${encodeURIComponent(inviteId)}`)
+    function acceptSession(session: Session) {
+      const email = session.user?.email
+      const accessToken = session.access_token
+      if (!active || !email || !accessToken) return
+
+      // Keep the recovery token in memory until the account activation request
+      // finishes. Supabase recovery callbacks can notify listeners before the
+      // refreshed session has fully persisted to storage.
+      inviteTokenRef.current = accessToken
       setAccountEmail(email)
       setReady(true)
       setLinkError('')
       setChecking(false)
+
+      // Remove sensitive callback parameters only after the token has been
+      // captured. The invite ID remains so refreshes can still show a clear state.
+      window.setTimeout(() => {
+        if (active) {
+          window.history.replaceState({}, document.title, `/accept-invite?invite=${encodeURIComponent(inviteId)}`)
+        }
+      }, 0)
     }
 
     const { data: listener } = client.auth.onAuthStateChange((_event, session) => {
-      if (!active || !session?.user?.email) return
-      acceptSession(session.user.email)
+      if (session?.user?.email && session.access_token) acceptSession(session)
     })
 
     void (async () => {
@@ -77,23 +92,31 @@ export default function AcceptInvite() {
         const accessToken = hash.get('access_token')
         const refreshToken = hash.get('refresh_token')
         const authorizationCode = url.searchParams.get('code')
+        let establishedSession: Session | null = null
 
         if (accessToken && refreshToken) {
-          const { error: sessionError } = await client.auth.setSession({
+          const { data, error: sessionError } = await client.auth.setSession({
             access_token: accessToken,
             refresh_token: refreshToken,
           })
           if (sessionError) throw sessionError
+          establishedSession = data.session
         } else if (authorizationCode) {
-          const { error: exchangeError } = await client.auth.exchangeCodeForSession(authorizationCode)
+          const { data, error: exchangeError } = await client.auth.exchangeCodeForSession(authorizationCode)
           if (exchangeError) throw exchangeError
+          establishedSession = data.session
+        }
+
+        if (establishedSession?.user?.email && establishedSession.access_token) {
+          acceptSession(establishedSession)
+          return
         }
 
         for (let attempt = 0; attempt < 20; attempt += 1) {
           const { data, error: sessionError } = await client.auth.getSession()
           if (sessionError) throw sessionError
-          if (data.session?.user?.email) {
-            acceptSession(data.session.user.email)
+          if (data.session?.user?.email && data.session.access_token) {
+            acceptSession(data.session)
             return
           }
           await wait(250)
@@ -134,9 +157,13 @@ export default function AcceptInvite() {
 
     setBusy(true)
     try {
+      let accessToken = inviteTokenRef.current
       const { data, error: sessionError } = await client.auth.getSession()
       if (sessionError) throw sessionError
-      const accessToken = data.session?.access_token
+      if (data.session?.access_token) {
+        accessToken = data.session.access_token
+        inviteTokenRef.current = accessToken
+      }
       if (!accessToken) throw new Error(INVALID_INVITE)
 
       const response = await fetch('/api/accept-admin-invite', {
@@ -151,6 +178,7 @@ export default function AcceptInvite() {
       const payload = await response.json().catch(() => null) as { ok?: boolean; message?: string; next?: string } | null
       if (!response.ok || !payload?.ok) throw new Error(payload?.message || 'Could not create the admin account.')
 
+      inviteTokenRef.current = ''
       setSuccess(true)
       window.setTimeout(() => window.location.replace(payload.next || '/mfa/setup'), 1000)
     } catch (acceptError) {
