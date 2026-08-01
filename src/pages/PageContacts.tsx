@@ -5,10 +5,10 @@ import { api } from '../lib/api'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import { useIsMobile } from '../lib/breakpoint'
-import { dateTime, relative } from '../lib/format'
+import { relative } from '../lib/format'
 import { T, SHADOW } from '../lib/theme'
 import type { ContactStatus, ManagedPage, PageContact } from '../lib/types'
-import { PageHeader, Icon, IC, ErrorBanner, SkeletonRows, StatusBadge, StatusSelect, Avatar, Badge, Country, ConfirmDialog } from '../components/ui'
+import { PageHeader, Icon, IC, ErrorBanner, SkeletonRows, StatusBadge, StatusSelect, Avatar, Badge, ConfirmDialog } from '../components/ui'
 import { TableCard, ListShell, MobileCard, Row, th, cell } from '../components/SubmissionTable'
 
 const STATUSES: ContactStatus[] = ['new', 'read', 'replied', 'archived']
@@ -21,6 +21,16 @@ function safeUrl(value: string | null) {
   } catch {
     return null
   }
+}
+
+function websiteHost(value: string | null) {
+  const url = safeUrl(value)
+  return url ? new URL(url).hostname : null
+}
+
+function messagePreview(value: string, limit = 90) {
+  const clean = value.replace(/\s+/g, ' ').trim()
+  return clean.length > limit ? `${clean.slice(0, limit - 1)}…` : clean
 }
 
 function pagePrefix(page: ManagedPage, item: PageContact) {
@@ -110,7 +120,7 @@ function PageContactDrawer({ page, item, onClose, onStatus, onDelete }: { page: 
             </div>
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 14 }}>
-            <a href={`mailto:${item.email}?subject=${encodeURIComponent(`${contactReference} · ${page.name} partnership inquiry`)}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 13px', borderRadius: 10, background: T.tealDeep, color: '#fff', fontSize: 12.5, fontWeight: 800 }}><Icon d={IC.mail} size={14} color="#fff" />Reply</a>
+            <a href={`mailto:${item.email}?subject=${encodeURIComponent(`${contactReference} · ${page.name} contact message`)}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 13px', borderRadius: 10, background: T.tealDeep, color: '#fff', fontSize: 12.5, fontWeight: 800 }}><Icon d={IC.mail} size={14} color="#fff" />Reply</a>
             <Badge fg={T.muted} bg={T.surface}>{contactReference}</Badge>
             <Badge fg={canManage ? T.tealInk : T.muted} bg={canManage ? T.tintTeal : T.surface}>{canManage ? 'Manager access' : 'Viewer access'}</Badge>
           </div>
@@ -122,36 +132,21 @@ function PageContactDrawer({ page, item, onClose, onStatus, onDelete }: { page: 
           {busy && <div style={{ marginTop: 7, color: T.muted, fontSize: 12 }}>Updating status…</div>}
           {error && <div role="alert" style={{ marginTop: 7, color: T.coralInk, fontSize: 12 }}>{error}</div>}
 
-          <Section>Brand and contact</Section>
-          <DetailRow label="Company">{item.company || 'Not provided'}</DetailRow>
-          <DetailRow label="Role">{item.contactRole || 'Not provided'}</DetailRow>
-          <DetailRow label="Website">{website ? <a href={website} target="_blank" rel="noreferrer" style={{ color: T.tealInk }}>{new URL(website).hostname} ↗</a> : 'Not provided'}</DetailRow>
-          <DetailRow label="Product status">{item.productStatus || 'Not provided'}</DetailRow>
+          <Section>Contact details</Section>
+          <DetailRow label="Full name">{item.name}</DetailRow>
+          <DetailRow label="Company name">{item.company || 'Not provided'}</DetailRow>
+          <DetailRow label="Website link">{website ? <a href={website} target="_blank" rel="noreferrer" style={{ color: T.tealInk }}>{new URL(website).hostname} ↗</a> : 'Not provided'}</DetailRow>
+          <DetailRow label="Email"><a href={`mailto:${item.email}`} style={{ color: T.tealInk }}>{item.email}</a></DetailRow>
 
-          <Section>Campaign qualification</Section>
-          <DetailRow label="Collaboration">{item.collaboration || 'Not provided'}</DetailRow>
-          <DetailRow label="Budget">{item.budget || 'Not provided'}</DetailRow>
-          <DetailRow label="Objective">{item.objective || 'Not provided'}</DetailRow>
-          <DetailRow label="Timeline">{item.timeline || 'Not provided'}</DetailRow>
-          <DetailRow label="Markets">{item.targetMarkets || 'Not provided'}</DetailRow>
-          <DetailRow label="Deliverables"><div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>{item.deliverables.length ? item.deliverables.map((value) => <Badge key={value} fg={T.tealInk} bg={T.tintTeal}>{value}</Badge>) : 'Not provided'}</div></DetailRow>
-
-          <Section>Campaign brief</Section>
+          <Section>Message</Section>
           <div style={{ padding: 15, border: `1px solid ${T.hairline}`, borderRadius: 13, background: T.paper, color: T.body, fontSize: 13.5, lineHeight: 1.65, whiteSpace: 'pre-wrap' }}>{item.message}</div>
-
-          <Section>Submission</Section>
-          <DetailRow label="Received">{dateTime(item.createdAt)}</DetailRow>
-          <DetailRow label="Consent">{item.consentedAt ? `Recorded ${dateTime(item.consentedAt)}` : 'Legacy submission'}</DetailRow>
-          <DetailRow label="Location"><Country m={item.meta} /></DetailRow>
-          <DetailRow label="Timezone">{item.meta.timezone || 'Unknown'}</DetailRow>
-          <DetailRow label="Referrer">{item.meta.referrer || 'Direct'}</DetailRow>
 
           {isSuperAdmin && <div style={{ marginTop: 28, paddingTop: 20, borderTop: `1px solid ${T.hairline}` }}><div style={{ color: T.coralInk, fontSize: 10.5, fontWeight: 900, letterSpacing: '.1em', textTransform: 'uppercase' }}>Danger zone</div><p style={{ color: T.muted, fontSize: 12.5, lineHeight: 1.5 }}>Permanently delete this page contact. The action is recorded in the Activity Log.</p><button onClick={() => setConfirmDelete(true)} style={{ border: 0, borderRadius: 10, padding: '9px 13px', background: T.coral, color: '#fff', fontWeight: 800, cursor: 'pointer' }}><Icon d={IC.trash} size={14} color="#fff" /> Delete contact</button></div>}
         </div>
       </motion.aside>
 
       <ConfirmDialog open={confirmDelete} title="Delete this page contact?" danger
-        body={<>This permanently removes <b>{item.name}</b>&apos;s {page.name} inquiry. The deletion is logged and cannot be undone.</>}
+        body={<>This permanently removes <b>{item.name}</b>&apos;s {page.name} contact message. The deletion is logged and cannot be undone.</>}
         confirmLabel={deleting ? 'Deleting…' : 'Delete contact'}
         onCancel={() => { if (!deleting) setConfirmDelete(false) }}
         onConfirm={remove} />
@@ -203,7 +198,7 @@ export default function PageContacts() {
     const q = search.trim().toLowerCase()
     return contacts.filter((item) => {
       const statusMatch = status === 'all' || item.status === status
-      const textMatch = !q || `${item.name} ${item.company} ${item.email} ${item.collaboration} ${item.budget} ${item.objective} ${item.targetMarkets}`.toLowerCase().includes(q)
+      const textMatch = !q || `${item.name} ${item.company || ''} ${item.website || ''} ${item.email} ${item.message}`.toLowerCase().includes(q)
       return statusMatch && textMatch
     })
   }, [contacts, search, status])
@@ -245,28 +240,27 @@ export default function PageContacts() {
   ) : null
 
   const emptyLabel = page
-    ? `New ${page.name} inquiries will appear here automatically.`
-    : 'New managed-page inquiries will appear here automatically.'
+    ? `New ${page.name} contact messages will appear here automatically.`
+    : 'New managed-page contact messages will appear here automatically.'
 
   return (
     <>
-      <PageHeader title={page ? `${page.name} contacts` : 'Page contacts'} description={page ? `Partnership inquiries received from ${page.domain}` : 'Loading managed page'} />
+      <PageHeader title={page ? `${page.name} contacts` : 'Page contacts'} description={page ? `Contact messages received from ${page.domain}` : 'Loading managed page'} />
       {filterBar}
       {error && <ErrorBanner message={error} onRetry={load} />}
       {loading ? <SkeletonRows rows={5} /> : isMobile ? (
         <ListShell search={search} setSearch={setSearch} count={filtered.length} emptyLabel={contacts.length === 0 ? emptyLabel : 'No contacts match the current filters.'}>
-          {filtered.map((item) => <MobileCard key={item.id} onClick={() => void open(item)} isNew={item.status === 'new'} name={item.name} avatarName={item.name} sub={`${item.company || 'No company'} · ${item.collaboration || 'Campaign inquiry'}`} status={item.status} meta={item.meta} />)}
+          {filtered.map((item) => <MobileCard key={item.id} onClick={() => void open(item)} isNew={item.status === 'new'} name={item.name} avatarName={item.name} sub={`${item.company || 'No company'} · ${websiteHost(item.website) || 'No website'}`} status={item.status} meta={item.meta} />)}
         </ListShell>
       ) : (
         <TableCard search={search} setSearch={setSearch} count={filtered.length} emptyLabel={contacts.length === 0 ? emptyLabel : 'No contacts match the current filters.'}
-          head={['Contact', 'Company', 'Collaboration', 'Budget', 'Objective', 'When', 'Status'].map((heading) => <th key={heading} style={th}>{heading}</th>)}>
+          head={['Contact', 'Company', 'Website', 'Message', 'When', 'Status'].map((heading) => <th key={heading} style={th}>{heading}</th>)}>
           {filtered.map((item) => (
             <Row key={item.id} onClick={() => void open(item)} isNew={item.status === 'new'}>
               <td style={cell}><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Avatar name={item.name} size={35} /><div><div style={{ color: T.ink, fontWeight: 750 }}>{item.name}</div><div style={{ color: T.muted, fontSize: 11.5 }}>{item.email}</div></div></div></td>
               <td style={cell}>{item.company || '—'}</td>
-              <td style={cell}>{item.collaboration || '—'}</td>
-              <td style={cell}>{item.budget || '—'}</td>
-              <td style={cell}>{item.objective || '—'}</td>
+              <td style={cell}>{websiteHost(item.website) || '—'}</td>
+              <td style={{ ...cell, maxWidth: 300 }} title={item.message}>{messagePreview(item.message)}</td>
               <td style={cell}>{relative(item.createdAt)}</td>
               <td style={cell}><StatusBadge s={item.status} /></td>
             </Row>
