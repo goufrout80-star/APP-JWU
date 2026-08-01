@@ -5,63 +5,6 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") ?? "";
 
-const TFM_COLLABORATIONS = new Set([
-  "Promotional video share",
-  "Custom content creation",
-  "Product integration",
-  "Multi-platform campaign",
-  "Long-term sponsorship",
-  "Not sure yet",
-]);
-const TFM_BUDGETS = new Set([
-  "$300–$599",
-  "$600–$1,499",
-  "$1,500–$2,999",
-  "$3,000+",
-  "Ongoing monthly partnership",
-  "Not sure, recommend a package",
-]);
-const TFM_ROLES = new Set([
-  "Founder / owner",
-  "Marketing manager",
-  "Influencer marketing manager",
-  "Agency / PR",
-  "Product manager",
-  "Other",
-]);
-const TFM_PRODUCT_STATUSES = new Set([
-  "Already launched",
-  "Launching soon",
-  "Private beta",
-  "Pre-launch",
-]);
-const TFM_OBJECTIVES = new Set([
-  "Brand awareness",
-  "Product launch",
-  "Website traffic",
-  "App registrations",
-  "Sales",
-  "Lead generation",
-  "Content production",
-  "Long-term visibility",
-]);
-const TFM_DELIVERABLES = new Set([
-  "Instagram Reel",
-  "Facebook Reel",
-  "TikTok",
-  "YouTube Short",
-  "Stories",
-  "Cross-platform distribution",
-  "Custom video production",
-  "Promotional video share",
-]);
-const TPG_BUDGETS = new Set([
-  "Under $2,500",
-  "$2,500 – $7,500",
-  "$7,500 – $20,000",
-  "$20,000+",
-]);
-
 type PageSlug = "todayfilmmakers" | "thephotoshopguide";
 type PageConfig = {
   slug: PageSlug;
@@ -162,25 +105,6 @@ function cleanUrl(value: unknown): string | null {
   return parsed.toString();
 }
 
-function oneOf(value: unknown, allowed: Set<string>, max = 160, required = true): string | null {
-  const clean = cleanText(value, max, required);
-  if (!clean && !required) return null;
-  if (!clean || !allowed.has(clean)) throw new Error("invalid_option");
-  return clean;
-}
-
-function selected(value: unknown, allowed: Set<string>, maximum = 8): string[] {
-  if (!Array.isArray(value)) throw new Error("invalid_deliverables");
-  const values = [...new Set(
-    value
-      .filter((item): item is string => typeof item === "string")
-      .map((item) => item.trim())
-      .filter((item) => allowed.has(item)),
-  )];
-  if (values.length < 1 || values.length > maximum) throw new Error("invalid_deliverables");
-  return values;
-}
-
 async function hash(value: string) {
   const digest = await crypto.subtle.digest(
     "SHA-256",
@@ -210,9 +134,9 @@ async function sendOptionalEmails(params: {
   notifyEmail: string | null;
   reference: string;
   name: string;
+  company: string;
+  website: string | null;
   email: string;
-  company: string | null;
-  budget: string | null;
   message: string;
 }) {
   if (!RESEND_API_KEY) return;
@@ -223,8 +147,9 @@ async function sendOptionalEmails(params: {
   if (!from) return;
 
   const safeName = escapeHtml(params.name);
-  const safeCompany = escapeHtml(params.company || "Not provided");
-  const safeBudget = escapeHtml(params.budget || "Not provided");
+  const safeCompany = escapeHtml(params.company);
+  const safeWebsite = escapeHtml(params.website || "Not provided");
+  const safeEmail = escapeHtml(params.email);
   const safeMessage = escapeHtml(params.message).replace(/\n/g, "<br>");
   const requests: Promise<Response>[] = [];
 
@@ -239,8 +164,8 @@ async function sendOptionalEmails(params: {
         from,
         to: [params.notifyEmail],
         reply_to: params.email,
-        subject: `[${params.reference}] New ${params.config.name} inquiry from ${params.company || params.name}`,
-        html: `<h2>New ${params.config.name} inquiry</h2><p><strong>Reference:</strong> ${params.reference}</p><p><strong>Name:</strong> ${safeName}</p><p><strong>Company:</strong> ${safeCompany}</p><p><strong>Email:</strong> ${escapeHtml(params.email)}</p><p><strong>Budget:</strong> ${safeBudget}</p><p><strong>Brief:</strong><br>${safeMessage}</p>`,
+        subject: `[${params.reference}] New ${params.config.name} contact from ${params.company}`,
+        html: `<h2>New ${params.config.name} contact</h2><p><strong>Reference:</strong> ${params.reference}</p><p><strong>Full name:</strong> ${safeName}</p><p><strong>Company:</strong> ${safeCompany}</p><p><strong>Website:</strong> ${safeWebsite}</p><p><strong>Email:</strong> ${safeEmail}</p><p><strong>Message:</strong><br>${safeMessage}</p>`,
       }),
     }));
   }
@@ -255,8 +180,8 @@ async function sendOptionalEmails(params: {
       from,
       to: [params.email],
       reply_to: params.notifyEmail || undefined,
-      subject: `${params.reference} · ${params.config.name} received your brief`,
-      html: `<h2>Partnership brief received</h2><p>Hi ${safeName},</p><p>${params.config.name} received your inquiry. Your reference is <strong>${params.reference}</strong>.</p><p>We will review it and reply with the strongest next step, usually within 1–2 business days.</p>`,
+      subject: `${params.reference} · ${params.config.name} received your message`,
+      html: `<h2>Message received</h2><p>Hi ${safeName},</p><p>${params.config.name} received your message. Your reference is <strong>${params.reference}</strong>.</p><p>Our team will review it and reply by email, usually within 1–2 business days.</p>`,
     }),
   }));
 
@@ -285,11 +210,11 @@ Deno.serve(async (req) => {
   }
   if (req.method !== "POST") return json(405, { ok: false, error: "Method not allowed." }, origin);
   if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
-    return json(503, { ok: false, error: "The secure inquiry service is unavailable." }, origin);
+    return json(503, { ok: false, error: "The secure contact service is unavailable." }, origin);
   }
 
   const contentLength = Number(req.headers.get("content-length") || 0);
-  if (contentLength > 30000) return json(413, { ok: false, error: "The inquiry is too large." }, origin);
+  if (contentLength > 30000) return json(413, { ok: false, error: "The message is too large." }, origin);
 
   let body: Record<string, unknown>;
   try {
@@ -306,53 +231,26 @@ Deno.serve(async (req) => {
     return json(201, { ok: true, reference: `${config.prefix}-RECEIVED` }, origin);
   }
   if (!body.payload || typeof body.payload !== "object" || Array.isArray(body.payload)) {
-    return json(400, { ok: false, error: "Invalid inquiry." }, origin);
+    return json(400, { ok: false, error: "Invalid contact message." }, origin);
   }
 
   const payload = body.payload as Record<string, unknown>;
   let name: string;
-  let company: string | null;
+  let company: string;
+  let website: string | null;
   let email: string;
-  let website: string | null = null;
-  let contactRole: string | null = null;
-  let collaboration: string | null = null;
-  let budget: string | null = null;
-  let timeline: string | null = null;
-  let objective: string | null = null;
-  let deliverables: string[] = [];
-  let targetMarkets: string | null = null;
-  let productStatus: string | null = null;
   let message: string;
 
   try {
     name = cleanText(payload.name, 120, true, 2)!;
+    company = cleanText(payload.company, 180, true, 2)!;
+    website = cleanUrl(payload.website);
     email = cleanEmail(payload.email);
-    if (payload.consent !== true) throw new Error("consent_required");
-
-    if (config.slug === "todayfilmmakers") {
-      company = cleanText(payload.company, 180, true, 2)!;
-      website = cleanUrl(payload.website);
-      contactRole = oneOf(payload.contactRole, TFM_ROLES, 120);
-      collaboration = oneOf(payload.collaboration, TFM_COLLABORATIONS);
-      budget = oneOf(payload.budget, TFM_BUDGETS, 120);
-      timeline = cleanText(payload.timeline, 300);
-      objective = oneOf(payload.objective, TFM_OBJECTIVES, 300);
-      deliverables = selected(payload.deliverables, TFM_DELIVERABLES);
-      targetMarkets = cleanText(payload.targetMarkets, 500);
-      productStatus = oneOf(payload.productStatus, TFM_PRODUCT_STATUSES, 120);
-      message = cleanText(payload.brief, 5000, true, 30)!;
-    } else {
-      company = cleanText(payload.company, 180);
-      website = cleanUrl(payload.website);
-      budget = oneOf(payload.budget, TPG_BUDGETS, 120, false);
-      collaboration = "Brand partnership inquiry";
-      objective = "Product promotion";
-      message = cleanText(payload.message, 5000, true, 20)!;
-    }
+    message = cleanText(payload.message ?? payload.brief, 5000, true, 10)!;
   } catch {
     return json(400, {
       ok: false,
-      error: "Please review the highlighted information and try again.",
+      error: "Please check your name, company, website, email and message, then try again.",
     }, origin);
   }
 
@@ -374,8 +272,8 @@ Deno.serve(async (req) => {
       p_window_seconds: seconds,
       p_max_requests: maximum,
     });
-    if (error) return json(503, { ok: false, error: "The secure inquiry service is temporarily unavailable." }, origin);
-    if (data !== true) return json(429, { ok: false, error: "Too many inquiries were submitted. Please wait and try again later." }, origin);
+    if (error) return json(503, { ok: false, error: "The secure contact service is temporarily unavailable." }, origin);
+    if (data !== true) return json(429, { ok: false, error: "Too many messages were submitted. Please wait and try again later." }, origin);
   }
 
   const { data: page, error: pageError } = await client
@@ -384,7 +282,7 @@ Deno.serve(async (req) => {
     .eq("slug", config.slug)
     .eq("active", true)
     .single();
-  if (pageError || !page) return json(503, { ok: false, error: "The inquiry service is temporarily unavailable." }, origin);
+  if (pageError || !page) return json(503, { ok: false, error: "The contact service is temporarily unavailable." }, origin);
 
   const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
   const { data: duplicate } = await client
@@ -409,7 +307,8 @@ Deno.serve(async (req) => {
     : {};
   const details = {
     source: `${config.slug}-contact`,
-    sourceVersion: 3,
+    sourceVersion: 4,
+    visibleFields: ["name", "company", "website", "email", "message"],
     browserLanguage: cleanText(clientMeta.browserLanguage, 40),
     viewport: cleanText(clientMeta.viewport, 40),
     referencePrefix: config.prefix,
@@ -432,26 +331,17 @@ Deno.serve(async (req) => {
       company,
       email,
       website,
-      contact_role: contactRole,
-      collaboration,
-      budget,
-      timeline,
-      objective,
-      deliverables,
-      target_markets: targetMarkets,
-      product_status: productStatus,
       message,
       status: "new",
       meta,
       details,
-      consented_at: new Date().toISOString(),
     })
     .select("id, created_at")
     .single();
 
   if (insertError || !inserted) {
     console.error("Page contact insert failed", insertError?.message);
-    return json(500, { ok: false, error: "We could not save your campaign brief. Please try again." }, origin);
+    return json(500, { ok: false, error: "We could not save your message. Please try again." }, origin);
   }
 
   const ref = reference(config, inserted.id, inserted.created_at);
@@ -460,9 +350,9 @@ Deno.serve(async (req) => {
     notifyEmail: page.notification_email,
     reference: ref,
     name,
-    email,
     company,
-    budget,
+    website,
+    email,
     message,
   });
 
