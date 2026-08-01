@@ -66,6 +66,7 @@ export type Application = CreatorApplication | BrandApplication
 export type Submission = ContactSubmission | Application
 
 export type AdminRole = 'admin' | 'super_admin'
+export type AdminInviteStatus = 'pending' | 'accepted' | 'revoked' | 'expired' | 'failed'
 
 export interface AdminRecord {
   userId: string
@@ -75,6 +76,34 @@ export interface AdminRecord {
   displayName: string | null
   createdAt: string
   updatedAt: string
+}
+
+export interface AdminInvite {
+  id: string
+  email: string
+  displayName: string | null
+  role: AdminRole
+  status: AdminInviteStatus
+  expiresAt: string
+  sentAt: string | null
+  acceptedAt: string | null
+  revokedAt: string | null
+  sentCount: number
+  lastError: string | null
+  invitedByEmail: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface AdminNotification {
+  id: string
+  recipientUserId: string
+  type: string
+  title: string
+  message: string
+  detail: Record<string, unknown>
+  readAt: string | null
+  createdAt: string
 }
 
 export interface ManagedPage {
